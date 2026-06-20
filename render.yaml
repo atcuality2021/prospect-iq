@@ -1,0 +1,75 @@
+################################################################################
+# ProspectIQ — Render.com Deployment
+#
+# Two services:
+#   1. prospect-iq-api    (web service  — Express API on :10000)
+#   2. prospect-iq-worker (background   — BullMQ worker)
+#
+# Before deploying:
+#   1. Connect this repo in the Render dashboard
+#   2. Create an "Environment Group" called prospect-iq-secrets containing:
+#        OPENAI_API_KEY     = sk-...
+#        ANTHROPIC_API_KEY  = sk-ant-...       (optional)
+#        MONGODB_URI        = mongodb+srv://... (MongoDB Atlas free tier)
+#        REDIS_URL          = rediss://...     (Upstash free tier)
+#        FRONTEND_URL       = https://your-app.vercel.app
+#   3. Deploy — both services share the same build and env group
+################################################################################
+
+envVarGroups:
+  - name: prospect-iq-secrets
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+services:
+  # ── API (web) ──────────────────────────────────────────────────────────────
+  - type: web
+    name: prospect-iq-api
+    runtime: node
+    region: oregon
+    plan: starter                          # $7/month — always-on
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start               # node dist/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000                      # Render assigns 10000 by default
+      - key: LLM_PROVIDER
+        value: openai
+      - key: OPENAI_MODEL
+        value: gpt-4o
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-6
+      - fromGroup: prospect-iq-secrets
+
+  # ── Worker (background) ───────────────────────────────────────────────────
+  - type: worker
+    name: prospect-iq-worker
+    runtime: node
+    region: oregon
+    plan: starter                          # $7/month — always-on
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:worker    # node dist/queue/worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LLM_PROVIDER
+        value: openai
+      - key: OPENAI_MODEL
+        value: gpt-4o
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-6
+      - fromGroup: prospect-iq-secrets
