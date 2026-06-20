@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+.next/
+dist/
+build/
+out/
+
+# Environment — NEVER commit real keys
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+nohup.out
+logs/
+
+# Video assets (large binaries — keep locally)
+video-frames/
+
+# Internal tooling (Claude / BiltIQ session artifacts)
+.biltiq/
+.biltiq-graph/
+.remember/
+.claude/
+.playwright-mcp/
+MEMORY.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime
+*.pid
+.cache/
