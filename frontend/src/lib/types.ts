@@ -100,6 +100,14 @@ export interface RunEvent {
   timestamp: string;
 }
 
+export interface Project {
+  projectId: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 
 export interface PlanTask {
@@ -154,6 +162,7 @@ export interface Run {
   error?: string;
   lowConfidence?: boolean;
   saved?: boolean;
+  projectId?: string;
   createdAt: string;
   updatedAt: string;
 }
