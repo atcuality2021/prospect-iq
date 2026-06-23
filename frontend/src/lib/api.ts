@@ -1,4 +1,4 @@
-import type { Run, CatalogEntry } from './types';
+import type { Run, CatalogEntry, OrchestrationRun } from './types';
 
 const BASE = '/api';
 
@@ -23,3 +23,6 @@ export const updateCatalogEntry = (id: string, e: object)     => req<CatalogEntr
 export const deleteCatalogEntry = (id: string)                => req<void>(`/catalog/${id}`, { method: 'DELETE' });
 export const getSettings        = ()                          => req<object>('/settings');
 export const saveSettings       = (d: object)                 => req<{ ok: boolean }>('/settings', { ...json(d), method: 'PUT' });
+export const createOrchestration = (body: { goal: string; hints?: object }) => req<{ orchestrationId: string }>('/orchestrations', { ...json(body) });
+export const getOrchestration    = (id: string)               => req<OrchestrationRun>(`/orchestrations/${id}`);
+export const listOrchestrations  = ()                         => req<OrchestrationRun[]>('/orchestrations');
