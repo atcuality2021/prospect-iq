@@ -10,6 +10,7 @@ import { gradeResearch, evaluatePitchCritique } from './orchestrator/grading';
 import { gradePipelineResult } from './orchestrator2/result-gate';
 import { OrchestrationEngine, EngineDeps, TaskResult } from './orchestrator2/engine';
 import { rankResults } from './orchestrator2/aggregate';
+import { normalizeCompany, groupRunsByCompany } from './util/groupByCompany';
 import { PlanTask } from './types';
 import { buildPlannerPrompt, capTasks } from './orchestrator2/planner';
 import { buildReplanPrompt } from './orchestrator2/replanner';
@@ -312,8 +313,26 @@ async function engineFanoutTests() {
   assert('fanout: synthesizer received ranked results (5)', synthInput.length === 5);
 }
 
+// ── projects: company grouping ────────────────────────────────────────────────
+async function groupTests() {
+  assert('normalizeCompany trims', normalizeCompany('  Stripe ') === 'Stripe');
+  assert('normalizeCompany blank → Unassigned', normalizeCompany('') === 'Unassigned' && normalizeCompany(undefined) === 'Unassigned');
+  const groups = groupRunsByCompany([
+    { lead: { company: 'Stripe' } },
+    { lead: { company: ' stripe ' } },
+    { lead: { company: '' } },
+    { lead: {} },
+  ]);
+  const stripe = groups.find((g) => g.company.toLowerCase() === 'stripe');
+  assert('group: Stripe variants merge (2)', stripe?.runs.length === 2, `${stripe?.runs.length}`);
+  const un = groups.find((g) => g.company === 'Unassigned');
+  assert('group: blanks → Unassigned (2)', un?.runs.length === 2, `${un?.runs.length}`);
+  assert('group: empty input → []', groupRunsByCompany([]).length === 0);
+}
+
 async function main() {
   await gateTests();
+  await groupTests();
   await configTests();
   await verificationTests();
   await gradingTests();
