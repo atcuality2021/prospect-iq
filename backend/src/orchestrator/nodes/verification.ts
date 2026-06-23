@@ -1,10 +1,27 @@
 import { OrchestratorState, VerificationResult, RunEvent } from '../../types';
 import { callWithTool } from '../../llm/client';
 
+export function buildVerificationPrompt(
+  sources: { source: string; text: string }[],
+  confidenceFloor: number,
+): string {
+  return `You are a fact-checker. Extract ONLY facts explicitly stated in the source text.
+
+RULES:
+1. Every fact needs a verbatim quote from the source proving it
+2. Discard anything requiring inference or assumption
+3. Only include facts with confidence ≥ ${confidenceFloor}
+
+SOURCE MATERIAL:
+${sources.map((s) => `=== ${s.source.toUpperCase()} ===\n${s.text}`).join('\n\n')}`;
+}
+
 export async function verificationNode(
   state: OrchestratorState,
   emit: (event: RunEvent) => Promise<void>,
+  opts: { confidenceFloor?: number } = {},
 ): Promise<Partial<OrchestratorState>> {
+  const confidenceFloor = opts.confidenceFloor ?? 60;
   await emit({ type: 'phase_start', phase: 'verifying', timestamp: new Date() });
 
   const sources = Object.entries(state.research)
@@ -21,15 +38,7 @@ export async function verificationNode(
     [
       {
         role: 'user',
-        content: `You are a fact-checker. Extract ONLY facts explicitly stated in the source text.
-
-RULES:
-1. Every fact needs a verbatim quote from the source proving it
-2. Discard anything requiring inference or assumption
-3. Only include facts with confidence ≥ 60
-
-SOURCE MATERIAL:
-${sources.map((s) => `=== ${s.source.toUpperCase()} ===\n${s.text}`).join('\n\n')}`,
+        content: buildVerificationPrompt(sources, confidenceFloor),
       },
     ],
     {
@@ -48,7 +57,7 @@ ${sources.map((s) => `=== ${s.source.toUpperCase()} ===\n${s.text}`).join('\n\n'
                 source: { type: 'string', description: 'website | linkedin | news | youtube' },
                 evidenceQuote: { type: 'string', description: 'Verbatim excerpt from the source proving this claim' },
                 sourceUrl: { type: 'string' },
-                confidence: { type: 'number', description: '60-100 only' },
+                confidence: { type: 'number', description: `${confidenceFloor}-100 only` },
               },
               required: ['claim', 'source', 'evidenceQuote', 'confidence'],
             },

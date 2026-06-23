@@ -5,6 +5,7 @@
 import { runGate } from './orchestrator/gate';
 import { RunEvent } from './types';
 import { config } from './config';
+import { buildVerificationPrompt } from './orchestrator/nodes/verification';
 
 let passed = 0;
 let failed = 0;
@@ -95,9 +96,21 @@ async function configTests() {
   assert('config.gates.pitchQualityThreshold default 70', config.gates.pitchQualityThreshold === 70, `got ${config.gates.pitchQualityThreshold}`);
 }
 
+// ── verification prompt builder ───────────────────────────────────────────────
+async function verificationTests() {
+  const sources = [{ source: 'website', text: 'Acme builds rockets.' }];
+  const p60 = buildVerificationPrompt(sources, 60);
+  const p40 = buildVerificationPrompt(sources, 40);
+  assert('prompt includes floor 60', p60.includes('confidence ≥ 60'));
+  assert('relaxed prompt includes floor 40', p40.includes('confidence ≥ 40'));
+  assert('prompt includes source header', p60.includes('=== WEBSITE ==='));
+  assert('prompt includes source text', p60.includes('Acme builds rockets.'));
+}
+
 async function main() {
   await gateTests();
   await configTests();
+  await verificationTests();
   console.log(`\n${passed}/${passed + failed} passed${failed ? ` — ${failed} FAILED` : ' 🎉'}`);
   process.exit(failed ? 1 : 0);
 }
