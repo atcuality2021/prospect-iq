@@ -6,7 +6,7 @@ import { runGate } from './orchestrator/gate';
 import { RunEvent } from './types';
 import { config } from './config';
 import { buildVerificationPrompt } from './orchestrator/nodes/verification';
-import { gradeResearch } from './orchestrator/grading';
+import { gradeResearch, evaluatePitchCritique } from './orchestrator/grading';
 
 let passed = 0;
 let failed = 0;
@@ -117,6 +117,15 @@ async function gradingTests() {
   assert('gradeResearch 3/2 passes', pass.pass === true);
   const edge = gradeResearch(2, 2);
   assert('gradeResearch 2/2 passes (>=)', edge.pass === true);
+
+  const base = { missingSignalRefs: [], ctaStrength: 'strong' as const, needsRevision: false, summaryNotes: 'n' };
+  const good = evaluatePitchCritique({ ...base, genericLanguageIssues: [], overallQuality: 80 }, 70);
+  assert('pitch 80>=70 & no generic → pass', good.pass === true);
+  assert('pitch pass score=80', good.score === 80);
+  const lowScore = evaluatePitchCritique({ ...base, genericLanguageIssues: [], overallQuality: 60 }, 70);
+  assert('pitch 60<70 → fail', lowScore.pass === false);
+  const generic = evaluatePitchCritique({ ...base, genericLanguageIssues: ['Dear Sir'], overallQuality: 90 }, 70);
+  assert('pitch high score but generic language → fail', generic.pass === false);
 }
 
 async function main() {
