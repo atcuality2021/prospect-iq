@@ -141,6 +141,7 @@ export interface Run {
   chatHistory?: ChatMessage[];
   gates?: GatesRecord;
   lowConfidence?: boolean;
+  projectId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -162,6 +163,15 @@ export interface OrchestratorState {
   errors: string[];
   gates?: GatesRecord;
   lowConfidence?: boolean;
+}
+
+// ── Projects (BILTIQ-003) ─────────────────────────────────────────────────────
+export interface Project {
+  projectId: string;
+  name: string;
+  description?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // ── Dynamic orchestrator (BILTIQ-001) ─────────────────────────────────────────
@@ -201,6 +211,7 @@ export interface OrchestrationRun {
   orchestrationId: string;
   goal: string;
   hints?: Record<string, unknown>;
+  projectId?: string;
   status: OrchestrationStatus;
   plan: PlanTask[];
   iterations: number;

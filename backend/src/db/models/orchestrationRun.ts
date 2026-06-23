@@ -26,6 +26,7 @@ const OrchestrationRunSchema = new Schema({
   orchestrationId: { type: String, required: true, unique: true, index: true },
   goal:            { type: String, required: true },
   hints:           Schema.Types.Mixed,
+  projectId:       { type: String, index: true },
   status:          { type: String, default: 'queued' },
   plan:            [PlanTaskSchema],
   iterations:      { type: Number, default: 0 },

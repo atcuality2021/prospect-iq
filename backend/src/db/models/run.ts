@@ -67,6 +67,7 @@ const RunSchema = new Schema({
     pitch:    [GateAttemptSchema],
   },
   lowConfidence: { type: Boolean, default: false },
+  projectId:     { type: String, index: true },
 }, { timestamps: true });
 
 export const RunModel = model<RunDoc>('Run', RunSchema);
