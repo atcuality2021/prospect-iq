@@ -6,6 +6,7 @@ import { runGate } from './orchestrator/gate';
 import { RunEvent } from './types';
 import { config } from './config';
 import { buildVerificationPrompt } from './orchestrator/nodes/verification';
+import { gradeResearch } from './orchestrator/grading';
 
 let passed = 0;
 let failed = 0;
@@ -107,10 +108,22 @@ async function verificationTests() {
   assert('prompt includes source text', p60.includes('Acme builds rockets.'));
 }
 
+// ── graders ───────────────────────────────────────────────────────────────────
+async function gradingTests() {
+  const fail = gradeResearch(0, 2);
+  assert('gradeResearch 0/2 fails', fail.pass === false);
+  assert('gradeResearch fail score = count', fail.score === 0);
+  const pass = gradeResearch(3, 2);
+  assert('gradeResearch 3/2 passes', pass.pass === true);
+  const edge = gradeResearch(2, 2);
+  assert('gradeResearch 2/2 passes (>=)', edge.pass === true);
+}
+
 async function main() {
   await gateTests();
   await configTests();
   await verificationTests();
+  await gradingTests();
   console.log(`\n${passed}/${passed + failed} passed${failed ? ` — ${failed} FAILED` : ' 🎉'}`);
   process.exit(failed ? 1 : 0);
 }

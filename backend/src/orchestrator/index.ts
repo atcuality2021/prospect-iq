@@ -5,6 +5,11 @@ import { synthesisNode } from './nodes/synthesis';
 import { matchingNode } from './nodes/matching';
 import { pitchNode } from './nodes/pitch';
 import { reflectionNode } from './nodes/reflection';
+import { config } from '../config';
+import { runGate } from './gate';
+import { gradeResearch } from './grading';
+
+const RELAXED_CONFIDENCE_FLOOR = 40;
 
 // Pipeline (paper architecture):
 //   research → verify (evidence chains) → synthesize (think-before-act)
@@ -37,6 +42,23 @@ export class ProspectOrchestrator {
 
       const verificationUpdate = await verificationNode(this.state, this.emit.bind(this));
       this.state = { ...this.state, ...verificationUpdate };
+
+      // Gate 1 — research sufficiency. Reviser re-runs verification on the SAME
+      // research at a relaxed confidence floor (recovers borderline facts without
+      // re-scraping, which is deterministic). On exhaustion, flag lowConfidence and
+      // continue best-effort rather than abort.
+      const researchGate = await runGate(this.state, {
+        name: 'research',
+        grader: async (s) =>
+          gradeResearch(s.verification?.verifiedFacts.length ?? 0, config.gates.minVerifiedFacts),
+        reviser: async (s) =>
+          verificationNode(s, this.emit.bind(this), { confidenceFloor: RELAXED_CONFIDENCE_FLOOR }),
+        maxRevisions: config.gates.researchRevisions,
+        emit: this.emit.bind(this),
+      });
+      this.state = researchGate.state;
+      this.state.gates = { ...this.state.gates, research: researchGate.attempts };
+      if (!researchGate.passed) this.state.lowConfidence = true;
 
       const synthesisUpdate = await synthesisNode(this.state, this.emit.bind(this));
       this.state = { ...this.state, ...synthesisUpdate };
