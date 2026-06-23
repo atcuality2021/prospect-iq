@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Lead, OrchestrationEvent, RunEvent } from '../types';
 import { RunModel } from '../db/models/run';
 import { ProspectOrchestrator } from '../orchestrator';
+import { gradePipelineResult } from './result-gate';
 
 export interface ToolContext {
   emit: (e: OrchestrationEvent) => Promise<void>;
@@ -64,6 +65,7 @@ export const runResearchPipelineTool: Tool = async (args) => {
     ...(failed && { error: finalState.errors.join('; ') }),
   });
 
+  const gate = gradePipelineResult({ pitch: finalState.pitch, lowConfidence: finalState.lowConfidence });
   const signals = finalState.profile?.signals.length ?? 0;
   const target = lead.company || lead.name || lead.url;
   const summary =
@@ -71,7 +73,7 @@ export const runResearchPipelineTool: Tool = async (args) => {
     `${finalState.pitch?.score != null ? ` (score ${finalState.pitch.score})` : ''}` +
     `${finalState.lowConfidence ? ', LOW CONFIDENCE' : ''}.`;
 
-  return { childRunId, summary, ok: !!finalState.pitch && !failed };
+  return { childRunId, summary, ok: gate.pass && !failed };
 };
 
 // Increment 1: only this tool. Later increments add registry entries here.

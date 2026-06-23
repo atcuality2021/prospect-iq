@@ -8,6 +8,8 @@ import { config } from './config';
 import { buildVerificationPrompt } from './orchestrator/nodes/verification';
 import { gradeResearch, evaluatePitchCritique } from './orchestrator/grading';
 import { gradePipelineResult } from './orchestrator2/result-gate';
+import { OrchestrationEngine, EngineDeps } from './orchestrator2/engine';
+import { PlanTask } from './types';
 
 let passed = 0;
 let failed = 0;
@@ -138,12 +140,51 @@ async function resultGateTests() {
   assert('result-gate: no pitch → fail', gradePipelineResult({ pitch: undefined, lowConfidence: false }).pass === false);
 }
 
+// ── orchestrator2: engine ─────────────────────────────────────────────────────
+function mkTask(id: string): PlanTask {
+  return { id, tool: 'run_research_pipeline', args: {}, rationale: 'r', status: 'pending' };
+}
+function mkDeps(over: Partial<EngineDeps>): EngineDeps {
+  return {
+    planner: async () => [mkTask('t1')],
+    replanner: async () => [],
+    grader: async () => ({ met: true, reasoning: 'ok', score: 100 }),
+    synthesizer: async () => 'final',
+    tools: { run_research_pipeline: async () => ({ ok: true, summary: 's', childRunId: 'r1' }) },
+    ...over,
+  };
+}
+
+async function engineTests() {
+  // stop-on-met
+  {
+    const eng = new OrchestrationEngine(mkDeps({}), async () => {});
+    const out = await eng.run({ orchestrationId: 'o1', goal: 'g', maxIterations: 6 });
+    assert('engine stop-on-met: goalMet=true', out.goalMet === true);
+    assert('engine stop-on-met: 1 iteration', out.iterations === 1, `got ${out.iterations}`);
+    assert('engine stop-on-met: task done', out.plan[0].status === 'done');
+    assert('engine stop-on-met: finalAnswer set', out.finalAnswer === 'final');
+  }
+  // stop-on-cap
+  {
+    const eng = new OrchestrationEngine(
+      mkDeps({ grader: async () => ({ met: false, reasoning: 'no', score: 0 }) }),
+      async () => {},
+    );
+    const out = await eng.run({ orchestrationId: 'o2', goal: 'g', maxIterations: 3 });
+    assert('engine stop-on-cap: goalMet=false', out.goalMet === false);
+    assert('engine stop-on-cap: partial=true', out.partial === true);
+    assert('engine stop-on-cap: iterations=3', out.iterations === 3, `got ${out.iterations}`);
+  }
+}
+
 async function main() {
   await gateTests();
   await configTests();
   await verificationTests();
   await gradingTests();
   await resultGateTests();
+  await engineTests();
   console.log(`\n${passed}/${passed + failed} passed${failed ? ` — ${failed} FAILED` : ' 🎉'}`);
   process.exit(failed ? 1 : 0);
 }
