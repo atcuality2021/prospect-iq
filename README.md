@@ -21,6 +21,39 @@ The result: a fully sourced prospect profile + a personalized pitch in under 5 m
 
 ## Architecture
 
+> 📐 **Full reference:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the complete architecture, the
+> loop stack, process topology, data model, and every end-to-end flow.
+
+ProspectIQ is built as a **stack of loops** — the original 6-phase pipeline (Loop 1), wrapped in
+verification gates (Loop 2), driven by a dynamic goal orchestrator (Loop 1.5), plus a Projects workspace
+for organizing, reusing, and chatting over research.
+
+```mermaid
+flowchart TB
+    B["Browser :3000 · Next.js UI"] -->|/api| API["Express API"]
+    API -->|enqueue| RQ[("Redis · BullMQ")]
+    RQ --> RW["Research Worker<br/>6-phase pipeline + L2 gates"]
+    RQ --> OW["Orchestration Worker<br/>plan → execute → adapt"]
+    OW -. "runs pipeline as a tool" .-> RW
+    RW --> M[("MongoDB<br/>runs · orchestrations · projects · companychats")]
+    OW --> M
+    API --> M
+    RW --> LLM{{"Switchable LLM adapter — OpenAI or on-prem vLLM"}}
+    OW --> LLM
+```
+
+The dynamic orchestrator's adaptive loop:
+
+```mermaid
+flowchart LR
+    G["Goal"] --> P["Plan"] --> E["Execute<br/>(parallel, gated)"]
+    E --> RK["Rank"] --> GR{"Goal met?"}
+    GR -- no --> RP["Replan"] --> E
+    GR -- yes --> S["Synthesize"]
+```
+
+<details><summary>Core 6-phase pipeline (detailed ASCII view)</summary>
+
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                   ProspectIQ System                      │
@@ -55,6 +88,8 @@ The result: a fully sourced prospect profile + a personalized pitch in under 5 m
 │                          (run persistence + events)      │
 └──────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ### Real-time Streaming
 
