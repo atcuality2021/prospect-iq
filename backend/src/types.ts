@@ -163,3 +163,50 @@ export interface OrchestratorState {
   gates?: GatesRecord;
   lowConfidence?: boolean;
 }
+
+// ── Dynamic orchestrator (BILTIQ-001) ─────────────────────────────────────────
+export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
+
+export interface PlanTask {
+  id: string;                    // stable within the orchestration
+  tool: 'run_research_pipeline'; // Increment 1: only this tool
+  args: Record<string, unknown>; // e.g. { lead: { company, url, linkedinUrl } }
+  rationale: string;             // why the planner added this task
+  status: TaskStatus;
+  childRunId?: string;           // the Run produced by this task, if any
+  gatePassed?: boolean;          // result of the goal-level gate check
+  resultSummary?: string;        // short text the synthesizer/grader can read
+}
+
+export type OrchestrationStatus =
+  | 'queued' | 'planning' | 'executing' | 'replanning' | 'grading' | 'completed' | 'failed';
+
+export interface OrchestrationEvent {
+  type:
+    | 'orchestration_start'
+    | 'plan_created' | 'plan_revised'
+    | 'task_start' | 'task_complete' | 'task_failed'
+    | 'gate_check'
+    | 'goal_graded'
+    | 'orchestration_complete' | 'orchestration_failed';
+  taskId?: string;
+  data?: unknown;
+  message?: string;
+  timestamp: Date;
+}
+
+export interface OrchestrationRun {
+  orchestrationId: string;
+  goal: string;
+  hints?: Record<string, unknown>;
+  status: OrchestrationStatus;
+  plan: PlanTask[];
+  iterations: number;
+  maxIterations: number;
+  goalMet: boolean;
+  partial: boolean;              // capped before goal fully met (mirrors lowConfidence)
+  finalAnswer?: string;
+  events: OrchestrationEvent[];
+  createdAt: Date;
+  updatedAt: Date;
+}
