@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Reflect: BILTIQ-001</title>
+<style>
+body{font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111827;max-width:860px;margin:0 auto;padding:2rem 1rem;}
+h1{font-size:1.5rem;border-bottom:2px solid #e5e7eb;padding-bottom:1rem;margin-bottom:1.5rem;}
+h2{font-size:1.1rem;border-left:4px solid #e5e7eb;padding-left:.75rem;margin:1.5rem 0 .75rem;}
+code{font-family:ui-monospace,monospace;font-size:.85em;background:#f9fafb;padding:.1em .3em;border-radius:3px;}
+li{margin-bottom:.35rem;} ul{padding-left:1.4rem;}
+.good{border-left-color:#16a34a;} .bad{border-left-color:#dc2626;} .ap{border-left-color:#d97706;}
+</style></head>
+<body>
+<h1>Reflect: BILTIQ-001 — Dynamic Orchestrator, Increment 1</h1>
+<p><strong>Outcome:</strong> shipped. 11 atomic steps, 62 LLM-free unit tests, code-reviewer approved, live e2e passed, on PR #1.</p>
+
+<h2 class="good">What went well</h2>
+<ul>
+  <li><strong>Injectable <code>EngineDeps</code> was the key decision.</strong> Taking planner/replanner/grader/synthesizer/tools as injected dependencies made the entire control loop (stop-on-met, stop-on-cap→partial, replan-applied, status transitions) unit-testable with zero LLM/DB. That's why 62 tests run in milliseconds.</li>
+  <li><strong>The BiltIQ gates earned their cost.</strong> The <code>biltiq-code-architect</code> codebase scan caught the hard Phase-A→BILTIQ-001 dependency the markdown specs never encoded. The <code>plan-reviewer</code> reverse-coverage gate caught two ADRs + a regression file that had drifted into the plan without design review.</li>
+  <li><strong>Wrapping over forking.</strong> The pipeline became a tool (<code>run_research_pipeline</code>) constructing the existing <code>ProspectOrchestrator</code>; reused <code>runEventBus</code> and the worker-persist shape verbatim. No duplication.</li>
+  <li><strong>The e2e proved the honest-failure path.</strong> On real data the result gate failed two low-confidence child runs, the loop capped at 3 and returned <code>partial=true</code> with a synthesis that openly said no viable email exists — exactly the design intent, not a bug.</li>
+</ul>
+
+<h2 class="bad">What broke / friction</h2>
+<ul>
+  <li><strong>Goal grader too strict.</strong> The e2e showed it rejected a decent score-45 pitch and demanded a single perfect output, which made the replanner re-run research and degrade to 0 signals. Root-caused as a prompt issue; fixed in BILTIQ-002 (coverage-aware grading).</li>
+  <li><strong><code>as const</code> schema widening.</strong> Extracting the planner's tool schema to a <code>const</code> widened <code>type:'object'</code> and froze arrays, breaking the <code>callWithTool</code> param type. Typecheck caught it; fixed by annotating <code>UnifiedTool['schema']</code>. Lesson: inline literals get contextual typing that extracted consts lose.</li>
+  <li><strong>Specs didn't encode cross-task dependencies.</strong> The markdown loop-engineering spec and the BILTIQ-001 spec both existed without recording that one blocks the other — only the architect's disk scan surfaced it.</li>
+</ul>
+
+<h2 class="ap">Anti-patterns observed (and handled)</h2>
+<ul>
+  <li><strong>AP#6 (dead code) — caught in build.</strong> <code>gradePipelineResult</code> was initially only called from tests. Wired it into <code>tools.ts</code> (tool <code>ok</code> = gate.pass) so it has a real production call path.</li>
+  <li><strong>AP#1 (duplication) — avoided by design.</strong> Reused engine/gate/event/persist; the reviewer confirmed no fork.</li>
+  <li><strong>AP#7 (residue) — two instances cleaned.</strong> A pre-existing stray <code>next.config.ts.bak</code> was found and <code>git rm</code>'d; the temporary e2e harness was deleted after use, never committed.</li>
+  <li><strong>Review finding fixed, not deferred.</strong> Engine skipped final-iteration replan so capped runs don't persist dangling <code>pending</code> tasks.</li>
+</ul>
+
+<h2>Carry-forward</h2>
+<ul>
+  <li>Grader strictness is a tuning surface → natural first target for <strong>Loop 4 (hill-climbing)</strong> once traces exist (Phase B).</li>
+  <li>HTTP+queue+worker path is typecheck-verified but only the engine path was e2e'd — do a manual <code>/orchestrate</code> click-through before merging PR #1.</li>
+  <li>Record cross-task dependencies in spec front-matter so the architect isn't the only safety net.</li>
+</ul>
+</body></html>
