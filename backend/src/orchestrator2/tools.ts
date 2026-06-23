@@ -7,6 +7,7 @@ import { gradePipelineResult } from './result-gate';
 export interface ToolContext {
   emit: (e: OrchestrationEvent) => Promise<void>;
   orchestrationId: string;
+  projectId?: string;
 }
 
 export interface ToolResult {
@@ -38,14 +39,14 @@ export function asLead(args: Record<string, unknown>): Lead {
   };
 }
 
-export const runResearchPipelineTool: Tool = async (args) => {
+export const runResearchPipelineTool: Tool = async (args, ctx) => {
   const lead = asLead(args);
   if (!lead.url && !lead.name && !lead.company) {
     return { ok: false, summary: 'No usable lead (need url, name, or company).' };
   }
 
   const childRunId = uuidv4();
-  await RunModel.create({ runId: childRunId, lead, status: 'researching', events: [] });
+  await RunModel.create({ runId: childRunId, lead, status: 'researching', events: [], ...(ctx.projectId && { projectId: ctx.projectId }) });
 
   const orchestrator = new ProspectOrchestrator(childRunId, lead, async (event: RunEvent) => {
     await RunModel.updateOne({ runId: childRunId }, { $push: { events: event } });

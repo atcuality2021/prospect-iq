@@ -8,7 +8,7 @@ import { config } from '../config';
 export const orchestrationsRouter = Router();
 
 orchestrationsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
-  const { goal, hints } = req.body as { goal?: string; hints?: Record<string, unknown> };
+  const { goal, hints, projectId } = req.body as { goal?: string; hints?: Record<string, unknown>; projectId?: string };
   if (!goal || !goal.trim()) { res.status(400).json({ error: 'goal required' }); return; }
 
   const orchestrationId = uuidv4();
@@ -16,6 +16,7 @@ orchestrationsRouter.post('/', async (req: Request, res: Response): Promise<void
     orchestrationId,
     goal: goal.trim(),
     hints,
+    ...(projectId && { projectId }),
     status: 'queued',
     plan: [],
     iterations: 0,

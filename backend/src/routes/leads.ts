@@ -7,7 +7,7 @@ import { Lead } from '../types';
 export const leadsRouter = Router();
 
 leadsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
-  const lead = req.body as Lead;
+  const { projectId, ...lead } = req.body as Lead & { projectId?: string };
 
   if (!lead.url && !lead.name && !lead.company) {
     res.status(400).json({ error: 'Provide at least one of: url, name, company' });
@@ -21,6 +21,7 @@ leadsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     lead,
     status: 'queued',
     events: [],
+    ...(projectId && { projectId }),
   });
 
   await enqueueRun(runId, lead);

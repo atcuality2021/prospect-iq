@@ -49,6 +49,7 @@ async function startWorker(): Promise<void> {
           goal: doc.goal,
           hints: doc.hints,
           maxIterations: doc.maxIterations || config.orchMaxIterations,
+          projectId: doc.projectId,
         });
         await OrchestrationRunModel.updateOne({ orchestrationId }, {
           status: 'completed',

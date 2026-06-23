@@ -41,6 +41,7 @@ export interface EngineInput {
   goal: string;
   hints?: Record<string, unknown>;
   maxIterations: number;
+  projectId?: string;
 }
 
 export interface EngineResult {
@@ -63,7 +64,7 @@ export class OrchestrationEngine {
   }
 
   async run(input: EngineInput): Promise<EngineResult> {
-    const { orchestrationId, goal, hints, maxIterations } = input;
+    const { orchestrationId, goal, hints, maxIterations, projectId } = input;
     await this.emit({ type: 'orchestration_start', message: goal, timestamp: new Date() });
 
     const plan = await this.deps.planner(goal, hints);
@@ -77,7 +78,7 @@ export class OrchestrationEngine {
       iterations++;
 
       const pending = plan.filter((t) => t.status === 'pending');
-      await runPool(pending, this.concurrency, (task) => this.executeTask(task, results, orchestrationId));
+      await runPool(pending, this.concurrency, (task) => this.executeTask(task, results, orchestrationId, projectId));
 
       const grade = await this.deps.grader(goal, results);
       await this.emit({ type: 'goal_graded', data: grade, timestamp: new Date() });
@@ -103,13 +104,13 @@ export class OrchestrationEngine {
     return { plan, iterations, goalMet, partial, finalAnswer };
   }
 
-  private async executeTask(task: PlanTask, results: TaskResult[], orchestrationId: string): Promise<void> {
+  private async executeTask(task: PlanTask, results: TaskResult[], orchestrationId: string, projectId?: string): Promise<void> {
     task.status = 'running';
     await this.emit({ type: 'task_start', taskId: task.id, message: task.rationale, timestamp: new Date() });
 
     const tool = this.deps.tools[task.tool];
     const toolResult: ToolResult = tool
-      ? await tool(task.args, { emit: this.emit, orchestrationId })
+      ? await tool(task.args, { emit: this.emit, orchestrationId, projectId })
       : { ok: false, summary: `Unknown tool: ${task.tool}` };
 
     task.childRunId = toolResult.childRunId;
