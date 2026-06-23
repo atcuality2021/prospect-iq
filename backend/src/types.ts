@@ -92,9 +92,14 @@ export interface Pitch {
 export type RunStatus = 'queued' | 'researching' | 'verifying' | 'synthesizing' | 'matching' | 'pitching' | 'reflecting' | 'completed' | 'failed';
 
 export interface RunEvent {
-  type: 'agent_start' | 'agent_complete' | 'agent_error' | 'phase_start' | 'phase_complete' | 'run_complete' | 'run_failed';
+  type:
+    | 'agent_start' | 'agent_complete' | 'agent_error'
+    | 'phase_start' | 'phase_complete'
+    | 'gate_start' | 'gate_attempt' | 'gate_pass' | 'gate_fail'
+    | 'run_complete' | 'run_failed';
   phase?: string;
   agent?: string;
+  gate?: string;
   data?: unknown;
   error?: string;
   timestamp: Date;
