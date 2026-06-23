@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Plan: BILTIQ-002 Multi-target fan-out</title>
+<style>
+body{font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111827;max-width:860px;margin:0 auto;padding:2rem 1rem;}
+h1{font-size:1.5rem;border-bottom:2px solid #e5e7eb;padding-bottom:1rem;margin-bottom:1.5rem;}
+h2{font-size:1.1rem;border-left:4px solid #e5e7eb;padding-left:.75rem;margin:1.5rem 0 .75rem;}
+code{font-family:ui-monospace,monospace;font-size:.85em;background:#f9fafb;padding:.1em .3em;border-radius:3px;}
+.step{border:1px solid #bbf7d0;background:#f0fdf4;border-radius:6px;padding:1rem 1.25rem;margin-bottom:1rem;}
+.step-title{font-weight:700;font-size:.95rem;} .band{font-size:.7rem;font-weight:700;padding:.1rem .5rem;border-radius:9999px;background:#e0f2fe;color:#0369a1;float:right;}
+.m{font-size:.8rem;color:#6b7280;margin:.4rem 0;} table{width:100%;border-collapse:collapse;font-size:.85rem;margin:.5rem 0;} th,td{text-align:left;padding:.5rem .75rem;border:1px solid #e5e7eb;} th{background:#f9fafb;}
+.risk-m{color:#d97706;font-weight:700;} .risk-l{color:#16a34a;font-weight:700;}
+</style></head>
+<body>
+<h1>Plan: BILTIQ-002 — Multi-target fan-out</h1>
+<p class="m"><strong>Branch:</strong> feat/loop-engineering · <strong>Base:</strong> main · each step = one commit, TDD via <code>npm run test:units</code>, commit <code>BILTIQ-002: &lt;step&gt;</code>. Depends on BILTIQ-001 (merged in branch).</p>
+
+<h2>Build Sequence</h2>
+
+<div class="step"><span class="band">M</span><span class="step-title">Step 1 — Config caps</span>
+<p class="m"><strong>Files:</strong> <code>backend/src/config.ts</code>, <code>backend/src/test-units.ts</code>.</p>
+<p class="m"><strong>Do:</strong> add <code>orchFanoutConcurrency</code> (env <code>ORCH_FANOUT_CONCURRENCY</code>, default 4) and <code>orchMaxTargets</code> (env <code>ORCH_MAX_TARGETS</code>, default 10).</p>
+<p class="m"><strong>Tests:</strong> defaults are 4 and 10. <strong>Gate:</strong> <code>npm run test:units</code> + <code>npm run typecheck</code>. (AC3, AC7)</p></div>
+
+<div class="step"><span class="band">M</span><span class="step-title">Step 2 — Aggregation (rankResults)</span>
+<p class="m"><strong>Files:</strong> create <code>backend/src/orchestrator2/aggregate.ts</code>; <code>test-units.ts</code>.</p>
+<p class="m"><strong>Do:</strong> pure <code>rankResults(results: TaskResult[]): TaskResult[]</code> — sort best-first: ok-and-not-lowConfidence first, then by descending pitch score (read from <code>result.summary</code>? no — rank by an explicit score field). Pass a numeric <code>score</code> on <code>ToolResult</code> (add optional <code>score?: number</code> to <code>ToolResult</code> in <code>tools.ts</code>, set from <code>gate.score</code>) so ranking is data-driven, not string-parsed.</p>
+<p class="m"><strong>Tests:</strong> ok+high-score ranks above ok+low-score; failed/low-confidence rank last; stable for empty. <strong>Gate:</strong> <code>npm run test:units</code>. (AC5)</p></div>
+
+<div class="step"><span class="band">M</span><span class="step-title">Step 3 — Engine bounded-parallel execution + ranking</span>
+<p class="m"><strong>Files:</strong> <code>backend/src/orchestrator2/engine.ts</code>; <code>test-units.ts</code>.</p>
+<p class="m"><strong>Do:</strong> replace the sequential pending-task <code>for</code> loop with a <code>runPool(tasks, K, fn)</code> helper that keeps at most K promises in flight; K = <code>config.orchFanoutConcurrency</code> (injectable via an engine option for tests). Call <code>rankResults(results)</code> before <code>synthesizer</code>. Preserve per-task gate + events + status.</p>
+<p class="m"><strong>Tests (LLM-free):</strong> with K=2 and 5 tasks, peak in-flight never exceeds 2 and all 5 run (instrument a counter in the mock tool); results passed to synthesizer are ranked. <strong>Gate:</strong> <code>npm run test:units</code> — existing engine tests still green. (AC3, AC4, AC5)</p></div>
+
+<div class="step"><span class="band">M</span><span class="step-title">Step 4 — Planner multi-target + expansion + cap</span>
+<p class="m"><strong>Files:</strong> <code>backend/src/orchestrator2/planner.ts</code>; <code>test-units.ts</code>.</p>
+<p class="m"><strong>Do:</strong> <code>buildPlannerPrompt</code> instructs explicit-list → one task each; descriptive → expand from own knowledge up to <code>maxTargets</code> (no web). <code>planGoal(goal, hints, maxTargets)</code> caps the returned tasks at <code>maxTargets</code>, dropping extras; worker passes <code>config.orchMaxTargets</code>.</p>
+<p class="m"><strong>Tests:</strong> prompt mentions the cap and "from your own knowledge / no web"; a post-parse cap helper trims a 15-item list to 10 (pure helper <code>capTasks</code>). <strong>Gate:</strong> <code>npm run test:units</code> + <code>typecheck</code>. (AC1, AC2, AC7)</p></div>
+
+<div class="step"><span class="band">M</span><span class="step-title">Step 5 — Coverage-aware goal grader</span>
+<p class="m"><strong>Files:</strong> <code>backend/src/orchestrator2/goal-grader.ts</code>; <code>test-units.ts</code>.</p>
+<p class="m"><strong>Do:</strong> <code>buildGraderPrompt</code> grades coverage — fraction of targets with a confident pitch — not a single perfect output; met when coverage is sufficient.</p>
+<p class="m"><strong>Tests:</strong> prompt includes coverage/"how many targets" language and the work summaries. <strong>Gate:</strong> <code>npm run test:units</code>. (AC6)</p></div>
+
+<div class="step"><span class="band">M</span><span class="step-title">Step 6 — ADR + final verification</span>
+<p class="m"><strong>Files:</strong> create <code>docs/adr/0004-fanout-parallel-execution.md</code>; <code>CHANGELOG.md</code>.</p>
+<p class="m"><strong>Do:</strong> record the parallel-in-engine vs fan_out-tool decision + caps. Run full suite + both typechecks.</p>
+<p class="m"><strong>Tests:</strong> whole <code>test:units</code> green; backend+frontend typecheck. Live e2e (multi-target) deferred — manual, needs services. <strong>Gate:</strong> green suite. (AC8)</p></div>
+
+<h2>Test Strategy</h2>
+<table><thead><tr><th>Layer</th><th>What</th></tr></thead><tbody>
+<tr><td>Unit (LLM-free)</td><td><code>runPool</code> concurrency cap + completeness; <code>rankResults</code> ordering; <code>capTasks</code>; planner + grader prompt builders</td></tr>
+<tr><td>Integration</td><td>Manual multi-target orchestration (needs Mongo/Redis/LLM) — deferred</td></tr>
+</tbody></table>
+
+<h2>Rollback</h2>
+<p>Additive/behavioral. Remove <code>aggregate.ts</code>; revert engine to the sequential loop; revert planner/grader prompt edits + config. <code>ORCH_FANOUT_CONCURRENCY=1</code> restores sequential behavior without a revert. No data migration.</p>
+
+<h2>Risks</h2>
+<table><thead><tr><th>Risk</th><th>Sev</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td>Parallel writes to shared <code>results</code> array race</td><td><span class="risk-m">MED</span></td><td>Each task pushes its own result; <code>runPool</code> awaits all before grade — no interleaved read during grading.</td></tr>
+<tr><td>Planner expands a stale/wrong list</td><td><span class="risk-l">LOW</span></td><td>Flag expanded lists; explicit lists bypass expansion.</td></tr>
+<tr><td>Cost blowup on large N</td><td><span class="risk-l">LOW</span></td><td><code>ORCH_MAX_TARGETS</code> cap + bounded concurrency.</td></tr>
+</tbody></table>
+
+<h2>Change History</h2>
+<table><thead><tr><th>Date</th><th>Section</th><th>Change</th><th>Trigger</th></tr></thead>
+<tbody><tr><td>2026-06-23</td><td>all</td><td>Initial draft from confirmed design</td><td>BILTIQ-002</td></tr></tbody></table>
+</body></html>
