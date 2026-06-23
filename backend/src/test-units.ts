@@ -10,6 +10,8 @@ import { gradeResearch, evaluatePitchCritique } from './orchestrator/grading';
 import { gradePipelineResult } from './orchestrator2/result-gate';
 import { OrchestrationEngine, EngineDeps } from './orchestrator2/engine';
 import { PlanTask } from './types';
+import { buildPlannerPrompt } from './orchestrator2/planner';
+import { buildReplanPrompt } from './orchestrator2/replanner';
 
 let passed = 0;
 let failed = 0;
@@ -208,6 +210,18 @@ async function engineReplanTests() {
   }
 }
 
+// ── orchestrator2: planner / replanner prompt builders ────────────────────────
+async function plannerTests() {
+  const p = buildPlannerPrompt('Research Stripe', { company: 'Stripe' });
+  assert('planner prompt includes goal', p.includes('Research Stripe'));
+  assert('planner prompt names the tool', p.includes('run_research_pipeline'));
+  assert('planner prompt includes hints', p.includes('"company":"Stripe"') || p.includes('Stripe'));
+  const rp = buildReplanPrompt('Outreach goal', [{ summary: 'did X', ok: true }]);
+  assert('replan prompt includes goal', rp.includes('Outreach goal'));
+  assert('replan prompt includes completed summary', rp.includes('did X'));
+  assert('replan prompt empty → nothing yet', buildReplanPrompt('G', []).includes('nothing yet'));
+}
+
 async function main() {
   await gateTests();
   await configTests();
@@ -216,6 +230,7 @@ async function main() {
   await resultGateTests();
   await engineTests();
   await engineReplanTests();
+  await plannerTests();
   console.log(`\n${passed}/${passed + failed} passed${failed ? ` — ${failed} FAILED` : ' 🎉'}`);
   process.exit(failed ? 1 : 0);
 }

@@ -24,6 +24,8 @@ export const config = {
   youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
 
+  orchMaxIterations: parseInt(process.env.ORCH_MAX_ITERATIONS || '6', 10),
+
   gates: {
     minVerifiedFacts:      parseInt(process.env.GATE_MIN_VERIFIED_FACTS || '2', 10),
     researchRevisions:     parseInt(process.env.GATE_RESEARCH_REVISIONS || '1', 10),
