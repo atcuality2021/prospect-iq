@@ -104,6 +104,8 @@ async function configTests() {
   assert('config.gates.researchRevisions default 1', config.gates.researchRevisions === 1, `got ${config.gates.researchRevisions}`);
   assert('config.gates.pitchRevisions default 2', config.gates.pitchRevisions === 2, `got ${config.gates.pitchRevisions}`);
   assert('config.gates.pitchQualityThreshold default 70', config.gates.pitchQualityThreshold === 70, `got ${config.gates.pitchQualityThreshold}`);
+  assert('config.orchFanoutConcurrency default 4', config.orchFanoutConcurrency === 4, `got ${config.orchFanoutConcurrency}`);
+  assert('config.orchMaxTargets default 10', config.orchMaxTargets === 10, `got ${config.orchMaxTargets}`);
 }
 
 // ── verification prompt builder ───────────────────────────────────────────────
