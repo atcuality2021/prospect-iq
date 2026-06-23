@@ -40,6 +40,12 @@ settingsRouter.get('/', (_req: Request, res: Response) => {
       reflection:   { enabled: true, qualityThreshold: reflectionThreshold, description: `Critic reviews and revises if quality < ${reflectionThreshold}` },
     },
     prompts: { ...DEFAULT_PROMPTS, ...promptOverrides },
+    gates: {
+      minVerifiedFacts:      config.gates.minVerifiedFacts,
+      researchRevisions:     config.gates.researchRevisions,
+      pitchRevisions:        config.gates.pitchRevisions,
+      pitchQualityThreshold: config.gates.pitchQualityThreshold,
+    },
   });
 });
 

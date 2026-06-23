@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Design: Dynamic Orchestrator — Increment 1 (Orchestrator Core)</title>
+  <!-- Design tokens: see /DESIGN.md for canonical BiltIQ design system -->
+  <style>
+    :root {
+      --color-border:    #e5e7eb;
+      --color-bg:        #ffffff;
+      --color-bg-subtle: #f9fafb;
+      --color-text:      #111827;
+      --color-muted:     #6b7280;
+      --color-new:       #16a34a;
+      --color-modified:  #d97706;
+      --color-risk-high: #dc2626;
+      --color-risk-med:  #d97706;
+      --color-risk-low:  #16a34a;
+      --radius:          6px;
+      --max-width:       860px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      padding: 2rem 1rem;
+    }
+    main { max-width: var(--max-width); margin: 0 auto; }
+    header {
+      border-bottom: 2px solid var(--color-border);
+      padding-bottom: 1.25rem;
+      margin-bottom: 2rem;
+    }
+    header h1 { font-size: 1.5rem; margin-bottom: 0.75rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
+    .meta dt { font-weight: 600; color: var(--color-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta dd { font-size: 0.9rem; }
+    section { margin-bottom: 2rem; }
+    h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      border-left: 4px solid var(--color-border);
+      padding-left: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    h3 { font-size: 0.95rem; font-weight: 600; margin: 1rem 0 0.4rem; }
+    p, li { margin-bottom: 0.4rem; }
+    ul { padding-left: 1.4rem; }
+    pre {
+      background: var(--color-bg-subtle);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      padding: 0.75rem 1rem;
+      overflow-x: auto;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      margin: 0.5rem 0;
+    }
+    code { font-family: ui-monospace, monospace; font-size: 0.85em; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin: 0.5rem 0;
+    }
+    th, td { text-align: left; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); }
+    th { background: var(--color-bg-subtle); font-weight: 600; }
+    .tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.1rem 0.4rem;
+      border-radius: 9999px;
+      white-space: nowrap;
+    }
+    .tag-new      { background: #dcfce7; color: var(--color-new);      border: 1px solid #86efac; }
+    .tag-modified { background: #fef3c7; color: var(--color-modified); border: 1px solid #fcd34d; }
+    .tag-risk-h   { background: #fee2e2; color: var(--color-risk-high);border: 1px solid #fca5a5; }
+    .tag-risk-m   { background: #fef3c7; color: var(--color-risk-med); border: 1px solid #fcd34d; }
+    .placeholder { color: var(--color-muted); font-style: italic; }
+    @media (max-width: 600px) { .meta { flex-direction: column; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Design: Dynamic Orchestrator — Increment 1 (Orchestrator Core)</h1>
+    <dl class="meta">
+      <div><dt>Task ID</dt><dd>BILTIQ-001</dd></div>
+      <div><dt>Author</dt><dd>@harish</dd></div>
+      <div><dt>Created</dt><dd>2026-06-23</dd></div>
+      <div><dt>Compliance</dt><dd>on_prem_preferred</dd></div>
+      <div><dt>Depends on</dt><dd>Phase A — L2 gates (<code>runGate</code>)</dd></div>
+    </dl>
+  </header>
+
+  <section id="approach">
+    <h2>Approach</h2>
+    <h3>Name</h3>
+    <p><strong>Hybrid plan-then-adapt loop in a new <code>backend/src/orchestrator2/</code> layer, with the fixed 6-phase pipeline wrapped as a single tool and orchestration state held in a new <code>OrchestrationRun</code> model.</strong></p>
+    <h3>Description</h3>
+    <p>A new planner-orchestrator layer sits <em>above</em> the existing fixed pipeline. The user states a free-form goal; an
+    LLM planner produces an ordered list of <code>run_research_pipeline</code> tasks; the engine executes each task as a
+    gated child <code>Run</code> (reusing the existing <code>ProspectOrchestrator</code> verbatim), gates the result with the Phase A
+    <code>runGate</code> primitive, replans the remaining tasks from what it learned, and goal-grades — looping until the grader
+    returns <code>met:true</code> or <code>maxIterations</code> (default 6) is hit. The key structural decision is that the engine takes
+    its planner, replanner, grader, and tool registry as <strong>injected dependencies</strong>, so the loop's control flow is unit-testable
+    with mocks and no live LLM. The pipeline is <strong>wrapped, not forked</strong>: <code>run_research_pipeline</code> constructs the
+    same <code>ProspectOrchestrator</code> the existing worker uses, so all six phases, their gates, and their events are inherited for free.
+    Trade-off: a new BullMQ queue, a new Mongo model, and a new SSE channel are added (more surface area) in exchange for keeping the
+    existing structured <code>/new</code> flow and its <code>Run</code> contract completely untouched — the dynamic layer is purely additive.</p>
+  </section>
+
+  <section id="alternatives">
+    <h2>Alternatives Considered</h2>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Alternative</th><th>Why Rejected</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>Extend the existing <code>prospect-research</code> BullMQ queue with an <code>orchestration</code> job type</td><td>Couples orchestration retries/concurrency to per-pipeline jobs and overloads the existing worker handler; a separate <code>orchestration</code> queue keeps lifecycles, concurrency, and failure handling independent. (Chosen: new queue.)</td></tr>
+        <tr><td>2</td><td>ReAct (single model loop interleaving thought + tool calls)</td><td>Harder to bound cost and to unit-test the control flow deterministically; an explicit plan→execute→replan loop gives a visible plan board and injectable steps. (Chosen: hybrid plan-then-adapt.)</td></tr>
+        <tr><td>3</td><td>Pure plan-then-execute (no replan between tasks)</td><td>Cannot adapt to what a task discovered (e.g. a failed gate), so it can't satisfy adaptive goals — the whole motivation for the increment. (Chosen: hybrid adds a replan step.)</td></tr>
+        <tr><td>4</td><td>Fork / modify <code>orchestrator/index.ts</code> to accept a goal directly</td><td>Breaks the working fixed pipeline and the <code>/new</code> contract, and duplicates phase logic; wrapping it as a tool inherits all phases and gates unchanged. (Chosen: wrap as tool.)</td></tr>
+        <tr><td>5</td><td>Embed orchestration fields (plan, iterations, goalMet) on the existing <code>Run</code> model</td><td>Conflates two different lifecycles (one goal session vs. one pipeline execution) and would require a schema migration on a live collection; a distinct <code>OrchestrationRun</code> model linking children via <code>childRunId</code> avoids touching <code>Run</code>. (Chosen: new model.)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="files-to-touch">
+    <h2>Files to Touch</h2>
+
+    <h3>New <span class="tag tag-new">CREATE</span></h3>
+    <table>
+      <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>backend/src/orchestrator2/engine.ts</code></td><td><code>OrchestrationEngine</code> — owns the plan→execute→gate→replan→grade loop, takes planner/replanner/grader/tools as injected deps, emits <code>OrchestrationEvent</code>s, enforces <code>maxIterations</code>, sets <code>goalMet</code>/<code>partial</code>, synthesizes the final answer.</td></tr>
+        <tr><td><code>backend/src/orchestrator2/planner.ts</code></td><td><code>planGoal(goal, hints)</code> → <code>PlanTask[]</code>. Uses <code>callWithTool</code> with a schema forcing <code>{ tasks: [{ tool, args, rationale }] }</code>.</td></tr>
+        <tr><td><code>backend/src/orchestrator2/replanner.ts</code></td><td><code>replan(goal, plan, completedResults)</code> → revised remaining <code>PlanTask[]</code> (may add/drop/reorder pending; never touches done). Uses <code>callWithTool</code>.</td></tr>
+        <tr><td><code>backend/src/orchestrator2/goal-grader.ts</code></td><td><code>gradeGoal(goal, results)</code> → <code>{ met, reasoning, score }</code> — orchestration-level LLM judge. Uses <code>callWithTool</code>.</td></tr>
+        <tr><td><code>backend/src/orchestrator2/synthesizer.ts</code></td><td><code>synthesize(goal, results)</code> → final-answer string. Uses <code>callText</code>.</td></tr>
+        <tr><td><code>backend/src/orchestrator2/tools.ts</code></td><td><code>TOOLS</code> registry + <code>runResearchPipelineTool</code>; wraps <code>ProspectOrchestrator</code>, persists a child <code>Run</code>, returns a short summary. Defines <code>Tool</code>/<code>ToolContext</code>/<code>ToolResult</code>.</td></tr>
+        <tr><td><code>backend/src/orchestrator2/result-gate.ts</code></td><td><code>gradePipelineResult(run)</code> → <code>GateResult</code> (deterministic: pass if child Run has a pitch and <code>!lowConfidence</code>). Imports <code>GateResult</code>/<code>runGate</code> from <code>orchestrator/gate.ts</code> (Phase A) — no new gate primitive.</td></tr>
+        <tr><td><code>backend/src/db/models/orchestrationRun.ts</code></td><td>Mongoose model for <code>OrchestrationRun</code> (mirrors <code>db/models/run.ts</code> conventions: schema-per-subdoc, <code>{ _id:false }</code>, <code>{ timestamps:true }</code>).</td></tr>
+        <tr><td><code>backend/src/queue/orchestrationWorker.ts</code></td><td>BullMQ worker for the <code>orchestration</code> queue: builds the engine with real injected deps, persists status transitions + events exactly like <code>queue/worker.ts</code>.</td></tr>
+        <tr><td><code>backend/src/routes/orchestrations.ts</code></td><td>Router for the 4 orchestration routes incl. SSE (mirrors <code>routes/runs.ts</code> + <code>routes/leads.ts</code>).</td></tr>
+        <tr><td><code>frontend/src/app/orchestrate/page.tsx</code></td><td>Goal textarea + optional hint fields + "Run" button → POST → route to live view.</td></tr>
+        <tr><td><code>frontend/src/app/orchestrate/[id]/page.tsx</code></td><td>Live "plan board" view (mirrors <code>app/runs/[id]/page.tsx</code> SSE/poll pattern).</td></tr>
+        <tr><td><code>frontend/src/components/PlanBoard.tsx</code></td><td>Renders the goal, task cards (status/rationale/child-Run link), replan banner, final answer, "goal partially met" badge.</td></tr>
+        <tr><td><code>docs/adr/0002-orchestration-run-model.md</code></td><td>ADR for the separate <code>OrchestrationRun</code> model decision (committed at the ADR/integration step).</td></tr>
+        <tr><td><code>docs/adr/0003-orchestration-queue.md</code></td><td>ADR for the dedicated <code>orchestration</code> queue + worker decision (committed at the ADR/integration step).</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Modified <span class="tag tag-modified">EDIT</span></h3>
+    <table>
+      <thead><tr><th>File</th><th>Change</th></tr></thead>
+      <tbody>
+        <tr><td><code>backend/src/types.ts</code></td><td>Add <code>TaskStatus</code>, <code>PlanTask</code>, <code>OrchestrationStatus</code>, <code>OrchestrationEvent</code>, <code>OrchestrationRun</code>. No change to existing types.</td></tr>
+        <tr><td><code>backend/src/queue/index.ts</code></td><td>Add <code>orchestrationQueue = new Queue('orchestration', …)</code> and <code>enqueueOrchestration(orchestrationId)</code>, reusing the existing <code>connection</code> block.</td></tr>
+        <tr><td><code>backend/src/events/emitter.ts</code></td><td>Add <code>emitOrchestrationEvent</code> / <code>onOrchestrationEvent</code> keyed <code>orchestration:&lt;id&gt;</code> on the existing <code>runEventBus</code> (no new bus).</td></tr>
+        <tr><td><code>backend/src/server.ts</code></td><td>Register <code>app.use('/api/orchestrations', orchestrationsRouter)</code>.</td></tr>
+        <tr><td><code>backend/src/config.ts</code></td><td>Add <code>orchMaxIterations</code> from <code>ORCH_MAX_ITERATIONS</code> (default 6).</td></tr>
+        <tr><td><code>backend/src/test-units.ts</code></td><td>Add the LLM-free engine tests (stop-on-met, stop-on-cap, replan-applied, status transitions) + <code>gradePipelineResult</code> tests. (File is created by Phase A; this increment appends.)</td></tr>
+        <tr><td><code>backend/package.json</code></td><td>Add an <code>orchestration-worker</code> start script alongside the existing worker script (separate process).</td></tr>
+        <tr><td><code>frontend/src/lib/types.ts</code></td><td>Add <code>OrchestrationRun</code>, <code>PlanTask</code>, <code>OrchestrationEvent</code>, <code>TaskStatus</code>, <code>OrchestrationStatus</code> (string-typed to match the existing frontend convention).</td></tr>
+        <tr><td><code>frontend/src/lib/api.ts</code></td><td>Add <code>createOrchestration</code>, <code>getOrchestration</code>, <code>listOrchestrations</code> using the existing <code>req</code>/<code>json</code> helpers.</td></tr>
+        <tr><td><code>frontend/src/components/Sidebar.tsx</code></td><td>Add an "Orchestrate" item to the <code>Core</code> nav group next to "New Research".</td></tr>
+        <tr><td><code>backend/src/test-system.ts</code></td><td>No edit — <strong>run only</strong> at the integration step as a regression check that the existing pipeline still passes. Listed here for plan↔design coverage completeness.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Existing wrappers reused (no new wrappers)</h3>
+    <ul>
+      <li><code>callText</code> / <code>callWithTool</code> from <code>backend/src/llm/client.ts</code> — the only sanctioned LLM entrypoints. Planner, replanner, goal-grader, and synthesizer all route through these (the switchable adapter), <strong>not</strong> a new client.</li>
+      <li><code>runGate</code> + <code>GateResult</code> from <code>backend/src/orchestrator/gate.ts</code> (Phase A) — the result gate primitive.</li>
+      <li><code>ProspectOrchestrator</code> from <code>backend/src/orchestrator/index.ts</code> — wrapped by <code>run_research_pipeline</code>, not forked.</li>
+      <li><code>runEventBus</code> from <code>backend/src/events/emitter.ts</code> — extended with an <code>orchestration:</code> key, not replaced.</li>
+      <li><code>RunModel</code> from <code>backend/src/db/models/run.ts</code> — child Runs are created/persisted exactly as the existing <code>leads.ts</code>/<code>worker.ts</code> path does.</li>
+    </ul>
+  </section>
+
+  <section id="data-model">
+    <h2>Data Model Changes</h2>
+    <p>One new Mongoose model — <code>OrchestrationRun</code> — added in <code>backend/src/db/models/orchestrationRun.ts</code>. The existing
+    <code>Run</code> model and collection are <strong>unchanged</strong> (no migration on live data). New shared types go in <code>backend/src/types.ts</code>.</p>
+    <pre><code>// backend/src/types.ts (new)
+type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
+
+interface PlanTask {
+  id: string;
+  tool: 'run_research_pipeline';   // Inc 1: only this tool
+  args: Record&lt;string, unknown&gt;;   // e.g. { lead: { company, url, linkedinUrl } }
+  rationale: string;
+  status: TaskStatus;
+  childRunId?: string;             // links to a Run via run.runId
+  gatePassed?: boolean;            // result of the Phase A result gate
+  resultSummary?: string;          // short, LLM-readable
+}
+
+type OrchestrationStatus =
+  | 'queued' | 'planning' | 'executing' | 'replanning'
+  | 'grading' | 'completed' | 'failed';
+
+interface OrchestrationEvent {
+  type: 'orchestration_start' | 'plan_created' | 'plan_revised'
+      | 'task_start' | 'task_complete' | 'task_failed'
+      | 'gate_check' | 'goal_graded'
+      | 'orchestration_complete' | 'orchestration_failed';
+  taskId?: string; data?: unknown; message?: string; timestamp: Date;
+}
+
+interface OrchestrationRun {
+  orchestrationId: string;
+  goal: string;
+  hints?: Record&lt;string, unknown&gt;;
+  status: OrchestrationStatus;
+  plan: PlanTask[];
+  iterations: number;
+  maxIterations: number;           // default 6
+  goalMet: boolean;
+  partial: boolean;                // true when capped before goal met (mirrors lowConfidence)
+  finalAnswer?: string;
+  events: OrchestrationEvent[];
+  createdAt: Date; updatedAt: Date;
+}
+</code></pre>
+    <p><strong>Child-Run linkage:</strong> when <code>run_research_pipeline</code> runs, it creates a <code>Run</code> via <code>RunModel.create({ runId, lead, … })</code>
+    (the same path as <code>routes/leads.ts</code>), executes <code>ProspectOrchestrator</code>, and persists the final state. The task records that
+    <code>runId</code> on <code>PlanTask.childRunId</code> — so the plan board links to <code>/runs/[id]</code> and the existing run-detail view renders it.
+    Per <code>overview.md</code>, a new data model is ADR-worthy: the dev writes <strong>ADR-0002</strong> before build (additive model, no migration).</p>
+  </section>
+
+  <section id="api-contract">
+    <h2>API Contract Changes</h2>
+    <p>Four new additive REST routes under <code>/api/orchestrations</code> (registered in <code>server.ts</code>). No existing route or request shape changes.
+    SSE follows the <code>routes/runs.ts</code> <code>/:id/events</code> convention exactly (replay-if-done, then live subscribe, <code>stream_end</code> sentinel).</p>
+    <pre><code>POST   /api/orchestrations         { goal: string, hints?: object }  -> { orchestrationId }
+GET    /api/orchestrations/:id     -> OrchestrationRun
+GET    /api/orchestrations/:id/events  (SSE) -> live OrchestrationEvent stream
+GET    /api/orchestrations         -> OrchestrationRun[]  (history list)
+
+// New BullMQ queue + handler:
+//   queue/index.ts:        orchestrationQueue = new Queue('orchestration', { connection })
+//                          enqueueOrchestration(orchestrationId)
+//   queue/orchestrationWorker.ts:  Worker('orchestration', handler, { connection })
+
+// Engine — injectable deps (the LLM-free testability contract):
+interface EngineDeps {
+  planner:   (goal: string, hints?: object) => Promise&lt;PlanTask[]&gt;;
+  replanner: (goal: string, plan: PlanTask[], results: TaskResult[]) => Promise&lt;PlanTask[]&gt;;
+  grader:    (goal: string, results: TaskResult[]) => Promise&lt;{ met: boolean; reasoning: string; score: number }&gt;;
+  synthesizer: (goal: string, results: TaskResult[]) => Promise&lt;string&gt;;
+  tools:     Record&lt;string, Tool&gt;;        // the TOOLS registry
+  emit:      (e: OrchestrationEvent) => Promise&lt;void&gt;;
+  maxIterations: number;
+}
+</code></pre>
+    <p>In tests the engine is constructed with mock <code>planner</code>/<code>replanner</code>/<code>grader</code>/<code>tools</code> that return canned values, so the
+    loop's branching (stop-on-met, stop-on-cap, replan-applied, status transitions) is verified with zero LLM calls.</p>
+  </section>
+
+  <section id="gate-reuse">
+    <h2>Result Gate Reuse &amp; Injectability</h2>
+    <p><strong>How <code>runGate</code> (Phase A) is reused:</strong> after a task's child Run completes, the engine calls <code>runGate(childRun, cfg)</code> where
+    the <code>grader</code> is <code>gradePipelineResult</code> — deterministic: <code>pass = !!run.pitch &amp;&amp; !run.lowConfidence</code>. With <code>maxRevisions</code> bounded
+    (Inc 1 may use 0 — grade once, no re-run, or 1 to allow one bounded re-run of the same pipeline task), this reuses the exact same control-flow helper
+    the per-phase gates use. The gate result sets <code>PlanTask.gatePassed</code>, emits a <code>gate_check</code> event, and is fed into the replan so a failed gate
+    influences the revised plan (spec AC6). No new gate machinery is written — <code>GateResult</code>, <code>GateAttempt</code>, and <code>runGate</code> all come from
+    <code>orchestrator/gate.ts</code>.</p>
+    <p><strong>Injectable-dependency shape (AC4):</strong> the engine never imports <code>planner.ts</code>/<code>replanner.ts</code>/<code>goal-grader.ts</code>/<code>tools.ts</code>
+    directly — it receives them via <code>EngineDeps</code> (above). The <em>worker</em> wires the real LLM-backed implementations; the <em>unit tests</em> wire mocks.
+    This is what makes "stop-on-met / stop-on-cap / replan-applied / status-transitions" testable without an LLM, and is the same dependency-injection pattern the
+    Phase A <code>runGate</code> tests already use (mock grader/reviser).</p>
+  </section>
+
+  <section id="security-compliance">
+    <h2>Security &amp; Compliance</h2>
+    <ul>
+      <li>Compliance mode <code>on_prem_preferred</code>: every LLM call (planner, replanner, goal-grader, synthesizer) routes through the existing switchable adapter
+      <code>llm/client.ts</code> (<code>callText</code>/<code>callWithTool</code>). When configured for on-prem vLLM, no data crosses an external boundary — the dynamic
+      layer adds <strong>no new external dependency</strong>, so no new ADR for cloud AI is required beyond the existing OpenAI-default ADR already covering the pipeline.</li>
+      <li>Bounded iterations (<code>maxIterations</code> default 6) cap LLM spend and prevent runaway loops — a cost <em>and</em> safety control.</li>
+      <li>Secret handling: all keys come from <code>config.ts</code> (env), never hardcoded. The worker is a separate process and reads config from env, not server module state — orchestration config (<code>ORCH_MAX_ITERATIONS</code>) follows the same rule as the Phase A gate config.</li>
+      <li>Input escaping: the user-supplied <code>goal</code> and <code>hints</code> are embedded in LLM prompts (planner/grader) and stored verbatim. They are not interpolated into Mongo queries (Mongoose parameterizes) and are rendered as text (not HTML) on the plan board. No SQL — Mongo only.</li>
+      <li>New Mongo model + new external-facing routes ⇒ ADR-0002 (data model) and a one-line threat-model note on the new endpoints, per <code>AGENT_RULES.md</code>.</li>
+    </ul>
+  </section>
+
+  <section id="performance">
+    <h2>Performance Considerations</h2>
+    <p>Increment 1 runs tasks <strong>sequentially</strong> (parallelism is out of scope; the <code>TOOLS</code> registry + per-task structure leaves room for Inc 2 fan-out).
+    Cost per orchestration = (sum of child pipeline runs) + at most <code>maxIterations</code> × (1 planner + 1 replanner + 1 grader) extra LLM calls, plus one synthesizer call.
+    Each child pipeline run is already cost-bounded by the Phase A per-phase gates. The hot path is the loop body's three LLM calls per iteration; with the default cap of 6 that is ≤ 18
+    orchestration-level calls on top of the pipeline work. The result gate is deterministic (no tokens) on the happy path. SSE reuses the in-process <code>runEventBus</code> — no extra
+    transport cost. Wall-clock is dominated by sequential pipeline runs (scraping latency), as today.</p>
+  </section>
+
+  <section id="rollout">
+    <h2>Rollout Plan</h2>
+    <p>Fully additive — <code>/new</code>, the <code>Run</code> model, the <code>prospect-research</code> queue, and the existing worker are untouched. Build sequence (each step ≤ ~1h, dependency-ordered; each is a future <code>/biltiq-engineering:build</code>):</p>
+    <ol style="padding-left: 1.4rem;">
+      <li><strong>Types + config</strong> — add the 5 orchestration types to <code>types.ts</code> and <code>orchMaxIterations</code> to <code>config.ts</code>. No tests (declarations). <em>(AC2 scaffolding)</em></li>
+      <li><strong>OrchestrationRun model</strong> — <code>db/models/orchestrationRun.ts</code> mirroring <code>run.ts</code>. Write ADR-0002 first. <em>(AC1, AC5)</em></li>
+      <li><strong>Result gate</strong> — <code>orchestrator2/result-gate.ts</code> (<code>gradePipelineResult</code>) + unit tests (pass when pitch &amp; <code>!lowConfidence</code>; fail otherwise) in <code>test-units.ts</code>. <em>(AC6)</em></li>
+      <li><strong>Engine + LLM-free tests</strong> — <code>orchestrator2/engine.ts</code> with injected deps; unit tests for stop-on-met, stop-on-cap (sets <code>partial</code>), replan-applied, status transitions. <em>(AC2, AC3, AC4)</em></li>
+      <li><strong>Tool wrapper</strong> — <code>orchestrator2/tools.ts</code> (<code>TOOLS</code> + <code>runResearchPipelineTool</code>) wrapping <code>ProspectOrchestrator</code>, creating/linking a child Run. <em>(AC5, AC7)</em></li>
+      <li><strong>LLM steps</strong> — <code>planner.ts</code>, <code>replanner.ts</code>, <code>goal-grader.ts</code>, <code>synthesizer.ts</code> via <code>callWithTool</code>/<code>callText</code>. <em>(AC2)</em></li>
+      <li><strong>Queue + worker</strong> — <code>queue/index.ts</code> (<code>orchestration</code> queue + enqueue) and <code>queue/orchestrationWorker.ts</code> wiring real deps + persistence + emitter. <em>(AC1, AC2)</em></li>
+      <li><strong>Routes + SSE</strong> — <code>routes/orchestrations.ts</code> (4 routes), <code>events/emitter.ts</code> orchestration keys, register in <code>server.ts</code>. <em>(AC1)</em></li>
+      <li><strong>Frontend</strong> — <code>/orchestrate</code> + <code>/orchestrate/[id]</code> pages, <code>PlanBoard</code>, <code>api.ts</code>/<code>types.ts</code> additions, Sidebar entry. <em>(AC1, AC3, AC5)</em></li>
+      <li><strong>Live integration check</strong> — one real goal ("Research Stripe and draft an outreach email") asserting a child Run with a pitch and a non-empty <code>finalAnswer</code>.</li>
+    </ol>
+    <h3>Rollback</h3>
+    <p>Because the feature is additive and isolated to <code>orchestrator2/</code>, the new queue, the new model, and the new routes/pages: revert the PR (or feature-branch). No data migration to undo — <code>OrchestrationRun</code> is a separate collection; dropping it does not affect <code>Run</code>. The <code>orchestration</code> worker process can simply be left unstarted to disable the feature without a code change.</p>
+  </section>
+
+  <section id="risk-flags">
+    <h2>Risk &amp; Anti-Pattern Flags (codebase scan)</h2>
+    <table>
+      <thead><tr><th>Flag</th><th>Sev</th><th>Detail &amp; mitigation</th></tr></thead>
+      <tbody>
+        <tr><td>Phase A not yet landed</td><td><span class="tag tag-risk-h">BLOCKER</span></td><td><strong>Confirmed by scan:</strong> <code>backend/src/orchestrator/gate.ts</code>, <code>grading.ts</code>, and <code>test-units.ts</code> do <em>not</em> exist — Phase A is an approved plan, not merged code. The result gate (AC6) and the unit-test harness this increment appends to both depend on it. <strong>Phase A must land first.</strong> If a parallel start is needed, Inc 1 can stub a local <code>runGate</code>/<code>GateResult</code> with the exact Phase A signatures (from the plan) behind <code>orchestrator2/result-gate.ts</code> and swap to the real import on merge — but the cleaner path is to sequence Phase A ahead. Surface in MEMORY.md as an in-flight dependency.</td></tr>
+        <tr><td>Duplication — emitter</td><td><span class="tag tag-risk-m">WATCH</span></td><td>Do <strong>not</strong> create a second <code>EventEmitter</code>/bus. Reuse <code>runEventBus</code> in <code>events/emitter.ts</code> with an <code>orchestration:&lt;id&gt;</code> key (Anti-Pattern #1). The SSE route must mirror <code>routes/runs.ts</code> (replay-if-done + <code>stream_end</code>), not reinvent streaming.</td></tr>
+        <tr><td>Duplication — worker persistence</td><td><span class="tag tag-risk-m">WATCH</span></td><td>The orchestration worker should persist status/events with the same <code>RunModel.updateOne(... $push events ...)</code> shape <code>queue/worker.ts</code> uses (against <code>OrchestrationRunModel</code>). Don't fork a divergent persistence convention.</td></tr>
+        <tr><td>Abstraction bypass — LLM</td><td><span class="tag tag-risk-m">WATCH</span></td><td>Planner/replanner/grader/synthesizer must call <code>callText</code>/<code>callWithTool</code> only (Anti-Pattern #2). No <code>new OpenAI()</code>/<code>new Anthropic()</code> inside <code>orchestrator2/</code> — the switchable adapter is the on-prem compliance boundary.</td></tr>
+        <tr><td>Duplication — pipeline</td><td><span class="tag tag-risk-m">WATCH</span></td><td><code>run_research_pipeline</code> must construct the existing <code>ProspectOrchestrator</code> and reuse the child-Run create/persist path from <code>routes/leads.ts</code> + <code>queue/worker.ts</code>. Re-implementing any phase logic in <code>tools.ts</code> is a #1 violation.</td></tr>
+        <tr><td>Coordination</td><td><span class="tag tag-risk-m">WATCH</span></td><td>Phase A edits the same files this increment touches: <code>types.ts</code>, <code>events/emitter.ts</code>, <code>queue/worker.ts</code>, <code>test-units.ts</code>, <code>config.ts</code>. Land Phase A first to avoid merge conflict churn; both are additive so conflicts are mechanical, not semantic.</td></tr>
+        <tr><td>Type safety</td><td><span class="tag tag-risk-l">NOTE</span></td><td><code>PlanTask.args</code> is <code>Record&lt;string, unknown&gt;</code>; <code>run_research_pipeline</code> must validate/narrow <code>args.lead</code> at the trust boundary before constructing a <code>Lead</code>, not cast blindly (Anti-Pattern #4/#5).</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="adrs">
+    <h2>Suggested ADRs (write before build)</h2>
+    <ul>
+      <li><strong>ADR-0002 — New <code>OrchestrationRun</code> data model:</strong> why a separate model rather than extending <code>Run</code>; additive, no migration; rollback = drop collection.</li>
+      <li><strong>ADR-0003 — New <code>orchestration</code> BullMQ queue + separate worker process:</strong> why a new queue rather than a job type on <code>prospect-research</code>; deployment impact (a second worker service on Render).</li>
+      <li><em>No new cloud-AI ADR required</em> — the increment reuses the existing <code>llm/client.ts</code> adapter and introduces no new external dependency.</li>
+    </ul>
+  </section>
+
+  <section id="change-history">
+    <h2>Change History</h2>
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Section</th><th>What Changed</th><th>Trigger</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>2026-06-23</td>
+          <td>all</td>
+          <td>Initial draft — architecture grounded in a scan of <code>orchestrator/</code>, <code>queue/</code>, <code>events/</code>, <code>routes/</code>, <code>llm/client.ts</code>, and the frontend run-detail flow; ported approach from the approved markdown design.</td>
+          <td>BILTIQ-001</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>

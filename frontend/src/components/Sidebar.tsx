@@ -21,6 +21,20 @@ function SvgResearch() {
     </svg>
   );
 }
+function SvgOrchestrate() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+    </svg>
+  );
+}
+function SvgProjects() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </svg>
+  );
+}
 function SvgCatalog() {
   return (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -138,6 +152,8 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: '/',           label: 'Dashboard',     icon: <SvgDashboard /> },
       { href: '/new',        label: 'New Research',  icon: <SvgResearch />  },
+      { href: '/orchestrate', label: 'Orchestrate',  icon: <SvgOrchestrate /> },
+      { href: '/projects',   label: 'Projects',      icon: <SvgProjects /> },
       { href: '/runs',       label: 'All Runs',      icon: <SvgRuns />      },
       { href: '/runs/saved', label: 'Saved',   icon: <SvgBookmark /> },
       { href: '/catalog',    label: 'Catalog',  icon: <SvgCatalog />  },

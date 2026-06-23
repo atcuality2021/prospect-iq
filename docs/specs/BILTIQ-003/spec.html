@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Spec: BILTIQ-003 Projects MVP</title>
+<style>
+body{font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111827;max-width:860px;margin:0 auto;padding:2rem 1rem;}
+h1{font-size:1.5rem;border-bottom:2px solid #e5e7eb;padding-bottom:1rem;margin-bottom:1.5rem;}
+h2{font-size:1.1rem;border-left:4px solid #e5e7eb;padding-left:.75rem;margin:1.5rem 0 .75rem;}
+code{font-family:ui-monospace,monospace;font-size:.85em;background:#f9fafb;padding:.1em .3em;border-radius:3px;}
+.meta{display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;font-size:.85rem;} .meta b{color:#6b7280;}
+.ac{list-style:none;padding:0;} .ac li{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:.5rem .75rem;margin-bottom:.4rem;font-size:.88rem;}
+.badge{font-size:.7rem;font-weight:700;color:#d97706;background:#fef3c7;border:1px solid #fcd34d;border-radius:9999px;padding:.1rem .4rem;margin-right:.4rem;}
+ul{padding-left:1.4rem;}
+</style></head><body>
+<h1>Spec: BILTIQ-003 — Projects MVP (organize research by Project → Company → Run)</h1>
+<p class="meta"><span><b>Task</b> BILTIQ-003</span><span><b>Owner</b> @harish</span><span><b>Created</b> 2026-06-23</span><span><b>Wall-clock</b> L</span><span><b>Compliance</b> on_prem_preferred</span><span><b>Parent</b> Projects feature P1 of P1–P4</span></p>
+
+<h2>Problem</h2>
+<p>Research is organized by how it was started (a flat run list), not by who it is about. Users cannot see all
+of a company's runs together or group research into a campaign, so research is one-shot and disposable.</p>
+
+<h2>User Impact</h2>
+<p>Users create <strong>Projects</strong>, attach research to them, and browse a project's prospects grouped by
+company with each company's runs beneath. New research (both New Research and Orchestrate) can be filed under a
+project at creation, and "research again" on an existing run pre-fills a fresh run. The 14 existing runs remain,
+shown as "Unassigned".</p>
+
+<h2>Acceptance Criteria</h2>
+<ul class="ac">
+<li><span class="badge">OPEN</span><b>AC1</b> — A <code>Project</code> can be created (name + optional description), listed, and fetched; persisted in its own Mongo collection.</li>
+<li><span class="badge">OPEN</span><b>AC2</b> — A run carries an optional <code>projectId</code>; <code>POST /api/runs</code> (New Research) and <code>POST /api/orchestrations</code> accept and persist it.</li>
+<li><span class="badge">OPEN</span><b>AC3</b> — <code>GET /api/projects/:id</code> returns the project plus its runs grouped by <code>lead.company</code> (normalized), so the UI can render Company → Runs.</li>
+<li><span class="badge">OPEN</span><b>AC4</b> — A Projects list page (create + list) and a Project detail page (companies, each expandable to its runs with links to <code>/runs/[id]</code>) exist; a "Projects" sidebar entry routes to them.</li>
+<li><span class="badge">OPEN</span><b>AC5</b> — New Research and Orchestrate forms have an optional Project selector; selecting one files the run under it.</li>
+<li><span class="badge">OPEN</span><b>AC6</b> — Each run card/detail exposes "Research again" that pre-fills a new run from that run's lead (surfacing the existing rerun path).</li>
+<li><span class="badge">OPEN</span><b>AC7</b> — Runs with no <code>projectId</code> are reachable via an "Unassigned" grouping; no existing run is lost or mutated by the schema change.</li>
+<li><span class="badge">OPEN</span><b>AC8</b> — Backend project model + the company-grouping helper are covered by LLM-free unit tests (grouping by normalized company; empty project).</li>
+</ul>
+
+<h2>Out of Scope (later increments / deferred)</h2>
+<ul>
+<li>Company-level chat over all runs (P2), build-on-prior pipeline seeding (P3), project-level synthesis/ranking (P4).</li>
+<li>A first-class Company collection / cross-project company identity; company name de-dup/merge.</li>
+<li>Team/multi-user, permissions, bulk move of runs between projects.</li>
+</ul>
+
+<h2>Open Questions</h2>
+<ul><li>Resolved: 3-level hierarchy; Company is a derived grouping on normalized <code>lead.company</code> (no Company collection in v1); legacy runs → "Unassigned".</li></ul>
+</body></html>

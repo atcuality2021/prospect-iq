@@ -14,3 +14,9 @@ export async function enqueueRun(runId: string, lead: object): Promise<void> {
     backoff: { type: 'exponential', delay: 2000 },
   });
 }
+
+export const orchestrationQueue = new Queue('orchestration', { connection });
+
+export async function enqueueOrchestration(orchestrationId: string): Promise<void> {
+  await orchestrationQueue.add('orchestrate', { orchestrationId }, { attempts: 1 });
+}

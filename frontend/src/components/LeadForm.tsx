@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { submitLead } from '@/lib/api';
+import ProjectSelector from './ProjectSelector';
 
 interface Props { onSubmit: (runId: string) => void; }
 
@@ -22,6 +23,7 @@ export default function LeadForm({ onSubmit }: Props) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
+  const [projectId, setProjectId] = useState<string | undefined>(undefined);
 
   const set = (k: string) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -45,7 +47,7 @@ export default function LeadForm({ onSubmit }: Props) {
     }
     setLoading(true);
     try {
-      const { runId } = await submitLead(form);
+      const { runId } = await submitLead({ ...form, ...(projectId && { projectId }) });
       onSubmit(runId);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Submission failed');
@@ -125,6 +127,9 @@ export default function LeadForm({ onSubmit }: Props) {
             </select>
           </div>
         </div>
+
+        <div className="border-t border-dashed border-gray-100" />
+        <ProjectSelector value={projectId} onChange={setProjectId} />
 
         {error && (
           <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-600 text-sm rounded-xl px-4 py-3">

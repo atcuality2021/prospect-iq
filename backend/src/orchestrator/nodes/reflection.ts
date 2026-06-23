@@ -1,29 +1,18 @@
 import { OrchestratorState, Pitch, RunEvent } from '../../types';
 import { callWithTool } from '../../llm/client';
+import { config } from '../../config';
+import { runGate } from '../gate';
+import { evaluatePitchCritique, PitchCritique } from '../grading';
 
-export async function reflectionNode(
-  state: OrchestratorState,
-  emit: (event: RunEvent) => Promise<void>,
-): Promise<Partial<OrchestratorState>> {
-  if (!state.pitch) return {};
-
-  await emit({ type: 'phase_start', phase: 'reflecting', timestamp: new Date() });
-
-  const critique = await callWithTool<{
-    genericLanguageIssues: string[];
-    missingSignalRefs: string[];
-    ctaStrength: 'strong' | 'weak' | 'missing';
-    overallQuality: number;
-    needsRevision: boolean;
-    summaryNotes: string;
-  }>(
+export async function critiquePitch(state: OrchestratorState): Promise<PitchCritique> {
+  return callWithTool<PitchCritique>(
     [
       {
         role: 'user',
         content: `You are a pitch critic. Flag any sentence that could be sent to ANY prospect unchanged.
 
 PITCH:
-${state.pitch.subject ? `Subject: ${state.pitch.subject}\n\n` : ''}${state.pitch.body}
+${state.pitch!.subject ? `Subject: ${state.pitch!.subject}\n\n` : ''}${state.pitch!.body}
 
 PROSPECT SIGNALS (should be referenced):
 ${state.profile?.signals.map((s) => `• [${s.relevance}] ${s.title}: ${s.description}`).join('\n') || '(no profile)'}`,
@@ -35,19 +24,11 @@ ${state.profile?.signals.map((s) => `• [${s.relevance}] ${s.title}: ${s.descri
       schema: {
         type: 'object',
         properties: {
-          genericLanguageIssues: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Phrases that are generic boilerplate, not tied to specific signals',
-          },
-          missingSignalRefs: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'High-relevance signals from the profile NOT referenced in the pitch',
-          },
+          genericLanguageIssues: { type: 'array', items: { type: 'string' }, description: 'Phrases that are generic boilerplate, not tied to specific signals' },
+          missingSignalRefs: { type: 'array', items: { type: 'string' }, description: 'High-relevance signals from the profile NOT referenced in the pitch' },
           ctaStrength: { type: 'string', enum: ['strong', 'weak', 'missing'] },
           overallQuality: { type: 'number', description: '0-100' },
-          needsRevision: { type: 'boolean', description: 'true if quality < 70 or generic language found' },
+          needsRevision: { type: 'boolean', description: 'true if quality below threshold or generic language found' },
           summaryNotes: { type: 'string', description: 'One-paragraph assessment shown to the user' },
         },
         required: ['genericLanguageIssues', 'missingSignalRefs', 'ctaStrength', 'overallQuality', 'needsRevision', 'summaryNotes'],
@@ -55,20 +36,14 @@ ${state.profile?.signals.map((s) => `• [${s.relevance}] ${s.title}: ${s.descri
     },
     1000,
   );
+}
 
-  let finalPitch: Pitch = { ...state.pitch, reflectionNotes: critique.summaryNotes, revised: false };
-
-  if (critique.needsRevision) {
-    const revised = await callWithTool<{
-      subject?: string;
-      body: string;
-      callToAction: string;
-      personalizationPoints: string[];
-    }>(
-      [
-        {
-          role: 'user',
-          content: `Revise this pitch to fix the critic's feedback. Every sentence must earn its place with a specific signal.
+export async function revisePitchDraft(state: OrchestratorState, critique: PitchCritique): Promise<Partial<Pitch>> {
+  return callWithTool<Partial<Pitch>>(
+    [
+      {
+        role: 'user',
+        content: `Revise this pitch to fix the critic's feedback. Every sentence must earn its place with a specific signal.
 
 CRITIC FEEDBACK:
 - Generic language to remove: ${critique.genericLanguageIssues.join('; ') || 'none'}
@@ -77,39 +52,67 @@ CRITIC FEEDBACK:
 - Notes: ${critique.summaryNotes}
 
 ORIGINAL PITCH:
-${state.pitch.subject ? `Subject: ${state.pitch.subject}\n\n` : ''}${state.pitch.body}
+${state.pitch!.subject ? `Subject: ${state.pitch!.subject}\n\n` : ''}${state.pitch!.body}
 
 PROSPECT PROFILE:
 ${JSON.stringify(state.profile, null, 2)}`,
-        },
-      ],
-      {
-        name: 'draft_pitch',
-        description: 'Revised pitch addressing all critic feedback.',
-        schema: {
-          type: 'object',
-          properties: {
-            subject: { type: 'string' },
-            body: { type: 'string' },
-            callToAction: { type: 'string' },
-            personalizationPoints: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['body', 'callToAction', 'personalizationPoints'],
-        },
       },
-      1500,
-    );
+    ],
+    {
+      name: 'draft_pitch',
+      description: 'Revised pitch addressing all critic feedback.',
+      schema: {
+        type: 'object',
+        properties: {
+          subject: { type: 'string' },
+          body: { type: 'string' },
+          callToAction: { type: 'string' },
+          personalizationPoints: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['body', 'callToAction', 'personalizationPoints'],
+      },
+    },
+    1500,
+  );
+}
 
-    finalPitch = {
-      ...finalPitch,
-      subject: revised.subject ?? finalPitch.subject,
-      body: revised.body,
-      callToAction: revised.callToAction,
-      personalizationPoints: revised.personalizationPoints,
-      revised: true,
-    };
-  }
+export async function reflectionNode(
+  state: OrchestratorState,
+  emit: (event: RunEvent) => Promise<void>,
+): Promise<Partial<OrchestratorState>> {
+  if (!state.pitch) return {};
 
-  await emit({ type: 'phase_complete', phase: 'reflecting', data: { pitch: finalPitch, critique }, timestamp: new Date() });
-  return { pitch: finalPitch };
+  await emit({ type: 'phase_start', phase: 'reflecting', timestamp: new Date() });
+
+  const threshold = config.gates.pitchQualityThreshold;
+
+  const gate = await runGate(state, {
+    name: 'pitch',
+    grader: async (s) => evaluatePitchCritique(await critiquePitch(s), threshold),
+    reviser: async (s, result) => {
+      const critique = result.details as PitchCritique;
+      const revised = await revisePitchDraft(s, critique);
+      const newPitch: Pitch = {
+        ...s.pitch!,
+        subject: revised.subject ?? s.pitch!.subject,
+        body: revised.body ?? s.pitch!.body,
+        callToAction: revised.callToAction ?? s.pitch!.callToAction,
+        personalizationPoints: revised.personalizationPoints ?? s.pitch!.personalizationPoints,
+        revised: true,
+      };
+      return { pitch: newPitch };
+    },
+    maxRevisions: config.gates.pitchRevisions,
+    emit,
+  });
+
+  const last = gate.attempts[gate.attempts.length - 1];
+  const finalPitch: Pitch = {
+    ...gate.state.pitch!,
+    reflectionNotes: last.feedback,
+    score: last.score,
+  };
+
+  await emit({ type: 'phase_complete', phase: 'reflecting', data: { pitch: finalPitch, attempts: gate.attempts }, timestamp: new Date() });
+  return { pitch: finalPitch, gates: { ...gate.state.gates, pitch: gate.attempts } };
 }

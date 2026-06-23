@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Design: BILTIQ-002 Multi-target fan-out</title>
+<style>
+body{font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111827;max-width:860px;margin:0 auto;padding:2rem 1rem;}
+h1{font-size:1.5rem;border-bottom:2px solid #e5e7eb;padding-bottom:1rem;margin-bottom:1.5rem;}
+h2{font-size:1.1rem;border-left:4px solid #e5e7eb;padding-left:.75rem;margin:1.5rem 0 .75rem;}
+code{font-family:ui-monospace,monospace;font-size:.85em;background:#f9fafb;padding:.1em .3em;border-radius:3px;}
+table{width:100%;border-collapse:collapse;font-size:.85rem;margin:.5rem 0;} th,td{text-align:left;padding:.5rem .75rem;border:1px solid #e5e7eb;} th{background:#f9fafb;}
+ul,ol{padding-left:1.4rem;} li{margin-bottom:.3rem;}
+.tag{font-size:.7rem;font-weight:700;padding:.1rem .4rem;border-radius:9999px;}
+.tag-new{background:#dcfce7;color:#16a34a;} .tag-mod{background:#fef3c7;color:#d97706;}
+</style></head>
+<body>
+<h1>Design: BILTIQ-002 — Multi-target fan-out</h1>
+
+<h2>Approach</h2>
+<p>Extend the Increment 1 engine — no new tool, no data-model change. Four coordinated edits plus one new
+module:</p>
+<ol>
+  <li><strong>Planner</strong> emits one <code>run_research_pipeline</code> task per target. It accepts an
+  explicit list verbatim and expands a descriptive goal from its own knowledge (no web), capping at
+  <code>config.gates</code>-sibling <code>ORCH_MAX_TARGETS</code>. Excess targets are dropped and noted.</li>
+  <li><strong>Engine execute step</strong> changes from a sequential <code>for</code> loop to a
+  <strong>bounded-concurrency pool</strong> (cap <code>ORCH_FANOUT_CONCURRENCY</code>): at most K tasks
+  in flight; each still runs <code>executeTask</code> (its own gate + events). Replan/grade/termination
+  unchanged.</li>
+  <li><strong>Aggregation</strong> (new <code>aggregate.ts</code>): a pure <code>rankResults</code> that
+  sorts <code>TaskResult[]</code> best-first by pitch score, pushing <code>!ok</code>/low-confidence
+  results to the bottom. The engine ranks before calling the synthesizer, so the final answer is
+  targets-best-first.</li>
+  <li><strong>Goal grader</strong> prompt becomes coverage-aware: judge "M of N targets have confident
+  pitches", not "one perfect output" — fixing the over-strict behavior the Inc 1 e2e surfaced.</li>
+</ol>
+
+<h2>Alternatives Considered</h2>
+<ul>
+  <li><strong>Dedicated <code>fan_out</code> tool</strong> — rejected: duplicates run/gate/persist the engine owns; child runs bypass the gate/event model.</li>
+  <li><strong>Planner-inferred lists only</strong> — rejected: no explicit fast path; all lists carry hallucination risk.</li>
+  <li><strong>Unbounded parallelism</strong> — rejected: each pipeline ≈12 LLM calls; would overload the endpoint and blow cost.</li>
+</ul>
+
+<h2>Files to Touch</h2>
+<h3>New <span class="tag tag-new">CREATE</span></h3>
+<table><thead><tr><th>File</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>backend/src/orchestrator2/aggregate.ts</code></td><td>Pure <code>rankResults(results): TaskResult[]</code> — sort best-first by pitch score, low-confidence/failed last.</td></tr>
+<tr><td><code>docs/adr/0004-fanout-parallel-execution.md</code></td><td>ADR: bounded-parallel execution in the engine (vs. fan_out tool) + concurrency/target caps.</td></tr>
+</tbody></table>
+<h3>Modified <span class="tag tag-mod">EDIT</span></h3>
+<table><thead><tr><th>File</th><th>Change</th></tr></thead><tbody>
+<tr><td><code>backend/src/orchestrator2/engine.ts</code></td><td>Replace the sequential pending-task <code>for</code> loop with a bounded-concurrency pool (helper <code>runPool</code>); call <code>rankResults</code> before <code>synthesizer</code>.</td></tr>
+<tr><td><code>backend/src/orchestrator2/planner.ts</code></td><td>Prompt instructs: explicit list → one task each; descriptive → expand from own knowledge up to <code>maxTargets</code>; cap applied post-parse with a dropped-count note.</td></tr>
+<tr><td><code>backend/src/orchestrator2/goal-grader.ts</code></td><td>Coverage-aware prompt: grade fraction of targets with confident pitches.</td></tr>
+<tr><td><code>backend/src/config.ts</code></td><td>Add <code>orchFanoutConcurrency</code> (<code>ORCH_FANOUT_CONCURRENCY</code>, default 4) and <code>orchMaxTargets</code> (<code>ORCH_MAX_TARGETS</code>, default 10).</td></tr>
+<tr><td><code>backend/src/orchestrator2/tools.ts</code></td><td>Add optional <code>score?: number</code> to <code>ToolResult</code>, set from the result gate's <code>score</code>, so <code>rankResults</code> sorts on data not parsed strings.</td></tr>
+<tr><td><code>backend/src/test-units.ts</code></td><td>Add: <code>runPool</code> respects cap + runs all; <code>rankResults</code> ordering; planner cap; coverage-grader prompt content.</td></tr>
+<tr><td><code>CHANGELOG.md</code></td><td>Unreleased entry for fan-out.</td></tr>
+</tbody></table>
+<h3>Reused unchanged</h3>
+<ul>
+<li><code>OrchestrationRun</code>/<code>PlanTask</code> model — no schema change (N task cards already render).</li>
+<li>Result gate (<code>result-gate.ts</code>), events, SSE, <code>PlanBoard.tsx</code> — unchanged.</li>
+<li>All LLM via <code>llm/client.ts</code> — no new external dependency (on_prem_preferred satisfied).</li>
+</ul>
+
+<h2>Data / API / Compliance</h2>
+<p>No data-model or API-contract change. Compliance unchanged (on_prem_preferred; planner/grader still via the switchable adapter). Bounded concurrency + max-targets cap bound cost.</p>
+
+<h2>Risks &amp; Rollout</h2>
+<ul>
+<li>Planner-expanded list stale/wrong → flag expanded lists; explicit lists bypass.</li>
+<li>Concurrency overwhelms endpoint → bounded pool + max-targets cap, both env-tunable.</li>
+<li>Partial fan-out → aggregate surfaces successes; <code>partial=true</code>, honest coverage report.</li>
+<li>Rollout: additive/behavioral; single-target goals still produce one task and behave as Inc 1. Setting <code>ORCH_FANOUT_CONCURRENCY=1</code> restores sequential execution.</li>
+</ul>
+
+<h2>Suggested ADR</h2>
+<p>ADR-0004 — fan-out parallel execution in the engine + caps.</p>
+</body></html>

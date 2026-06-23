@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plan: Dynamic Orchestrator — Increment 1</title>
+  <style>
+    :root{--color-border:#e5e7eb;--color-bg:#fff;--color-bg-subtle:#f9fafb;--color-text:#111827;--color-muted:#6b7280;--color-step-bg:#f0fdf4;--color-step-bdr:#bbf7d0;--color-risk-high:#dc2626;--color-risk-med:#d97706;--color-risk-low:#16a34a;--radius:6px;--max-width:860px;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.6;color:var(--color-text);background:var(--color-bg);padding:2rem 1rem;}
+    main{max-width:var(--max-width);margin:0 auto;}
+    header{border-bottom:2px solid var(--color-border);padding-bottom:1.25rem;margin-bottom:2rem;}
+    header h1{font-size:1.5rem;margin-bottom:0.75rem;}
+    .meta{display:flex;flex-wrap:wrap;gap:0.5rem 1.5rem;}
+    .meta dt{font-weight:600;color:var(--color-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;}
+    .meta dd{font-size:0.9rem;}
+    section{margin-bottom:2rem;}
+    h2{font-size:1.1rem;font-weight:700;border-left:4px solid var(--color-border);padding-left:0.75rem;margin-bottom:0.75rem;}
+    p,li{margin-bottom:0.4rem;} ul,ol{padding-left:1.4rem;}
+    code{font-family:ui-monospace,monospace;font-size:0.85em;background:var(--color-bg-subtle);padding:0.1em 0.3em;border-radius:3px;}
+    .prereq{border:1px solid #fcd34d;background:#fffbeb;border-radius:var(--radius);padding:0.85rem 1.1rem;margin-bottom:1.25rem;font-size:0.88rem;}
+    .step{border:1px solid var(--color-step-bdr);background:var(--color-step-bg);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:1rem;}
+    .step-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.5rem;}
+    .step-title{font-weight:700;font-size:0.95rem;}
+    .band{font-size:0.7rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:9999px;background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;}
+    .step-meta{font-size:0.8rem;color:var(--color-muted);margin-bottom:0.5rem;}
+    .step-tests{font-size:0.82rem;margin-top:0.5rem;} .step-tests strong{color:var(--color-muted);}
+    table{width:100%;border-collapse:collapse;font-size:0.85rem;margin:0.5rem 0;}
+    th,td{text-align:left;padding:0.5rem 0.75rem;border:1px solid var(--color-border);} th{background:var(--color-bg-subtle);font-weight:600;}
+    .risk-h{color:var(--color-risk-high);font-weight:700;} .risk-m{color:var(--color-risk-med);font-weight:700;} .risk-l{color:var(--color-risk-low);font-weight:700;}
+    @media (max-width:600px){.meta{flex-direction:column;}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Plan: Dynamic Orchestrator — Increment 1 (Orchestrator Core)</h1>
+    <dl class="meta">
+      <div><dt>Task ID</dt><dd>BILTIQ-001</dd></div>
+      <div><dt>Branch</dt><dd>feat/dynamic-orchestrator-inc1</dd></div>
+      <div><dt>Base</dt><dd>main (after Phase A merges)</dd></div>
+      <div><dt>Created</dt><dd>2026-06-23</dd></div>
+    </dl>
+  </header>
+
+  <div class="prereq">
+    <strong>⚠ Prerequisite (BLOCKER from design scan):</strong> Phase A — L2 Verification Gates must be
+    merged first. This plan consumes <code>backend/src/orchestrator/gate.ts</code> (<code>runGate</code>,
+    <code>GateResult</code>, <code>GateAttempt</code>) and extends <code>backend/src/test-units.ts</code>,
+    both created by Phase A. Build order: <strong>Phase A → BILTIQ-001</strong>.
+  </div>
+
+  <section id="steps">
+    <h2>Build Sequence</h2>
+    <p style="margin-bottom:1rem;font-size:0.85rem;color:var(--color-muted);">
+      Each step = one logical commit. TDD where logic exists: RED → GREEN in the same step via
+      <code>npm run test:units</code> (the repo's LLM-free harness). Commit format: <code>BILTIQ-001: &lt;step&gt;</code>.
+    </p>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 1 — Data model & types</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> Everything downstream references these types; land them first.</p>
+      <p class="step-meta"><strong>Files:</strong> create <code>backend/src/db/models/orchestrationRun.ts</code>; modify <code>backend/src/types.ts</code> (add <code>OrchestrationRun</code>, <code>PlanTask</code>, <code>OrchestrationEvent</code>, <code>TaskStatus</code>, <code>OrchestrationStatus</code>).</p>
+      <div class="step-tests"><strong>Tests:</strong> none (type/schema decls — structural correctness exercised by Steps 2–3). <strong>Gate:</strong> <code>cd backend && npm run typecheck</code> — exit 0. <em>(AC1 scaffolding)</em></div>
+    </div>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 2 — Tool layer + result gate</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> The single tool wraps the existing pipeline; the result gate reuses Phase A. Pure-logic gate is the first testable unit.</p>
+      <p class="step-meta"><strong>Files:</strong> create <code>backend/src/orchestrator2/tools.ts</code> (<code>ToolContext</code>, <code>ToolResult</code>, <code>Tool</code>, <code>runResearchPipelineTool</code> wrapping <code>ProspectOrchestrator</code>, <code>TOOLS</code> registry), <code>backend/src/orchestrator2/result-gate.ts</code> (<code>gradePipelineResult(run): GateResult</code>).</p>
+      <div class="step-tests"><strong>Tests:</strong> <code>gradePipelineResult</code> — pass when run has a pitch and <code>!lowConfidence</code>; fail otherwise (AC6). Added to <code>test-units.ts</code>. <strong>Gate:</strong> <code>npm run test:units</code> — GREEN.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 3a — Engine skeleton + termination tests</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> The heart of the increment; DI makes the loop testable without an LLM (AC4). Land the loop + termination first.</p>
+      <p class="step-meta"><strong>Files:</strong> create <code>backend/src/orchestrator2/engine.ts</code> (<code>OrchestrationEngine</code>, <code>EngineDeps = {planner, replanner, grader, synthesizer, tools}</code>, the plan→execute→gate→replan→grade loop, <code>maxIterations</code> enforcement, event emission).</p>
+      <div class="step-tests"><strong>Tests (LLM-free, mock deps):</strong> stop-on-met (grader returns met → loop exits, <code>goalMet=true</code>); stop-on-cap (grader never met → exits at <code>maxIterations</code>, <code>partial=true</code>) (AC2, AC3). <strong>Gate:</strong> <code>npm run test:units</code> — GREEN.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 3b — Engine replan + status-transition tests</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> The adaptive behavior and task-state correctness, split out so each is an independently reviewable commit.</p>
+      <p class="step-meta"><strong>Files:</strong> modify <code>backend/src/orchestrator2/engine.ts</code> (apply replan output to the pending-task list; task status transitions).</p>
+      <div class="step-tests"><strong>Tests (LLM-free, mock deps):</strong> replan output replaces only pending tasks (done tasks untouched); status transitions pending→running→done and →failed on gate fail (AC4, AC6). <strong>Gate:</strong> <code>npm run test:units</code> — GREEN.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 4a — planner + replanner (LLM-backed)</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> Real plan/replan deps. Must route through <code>llm/client.ts</code> only (compliance boundary, Anti-Pattern #2).</p>
+      <p class="step-meta"><strong>Files:</strong> create <code>backend/src/orchestrator2/planner.ts</code>, <code>backend/src/orchestrator2/replanner.ts</code> using <code>callWithTool</code>; add <code>ORCH_MAX_ITERATIONS</code> to <code>backend/src/config.ts</code>.</p>
+      <div class="step-tests"><strong>Tests:</strong> extract + unit-test pure prompt-builders (<code>buildPlannerPrompt</code>, <code>buildReplanPrompt</code>) in <code>test-units.ts</code>; LLM calls covered by Step 8. <strong>Gate:</strong> <code>npm run typecheck &amp;&amp; npm run test:units</code>.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 4b — goal-grader + synthesizer (LLM-backed)</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> The termination judge and final-answer assembler; separable commit from plan/replan.</p>
+      <p class="step-meta"><strong>Files:</strong> create <code>backend/src/orchestrator2/goal-grader.ts</code> (<code>callWithTool</code>), <code>backend/src/orchestrator2/synthesizer.ts</code> (<code>callText</code>).</p>
+      <div class="step-tests"><strong>Tests:</strong> unit-test pure prompt-builders (<code>buildGraderPrompt</code>, <code>buildSynthesisPrompt</code>) in <code>test-units.ts</code>; LLM calls covered by Step 8. <strong>Gate:</strong> <code>npm run typecheck &amp;&amp; npm run test:units</code>.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 5 — Queue + worker</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> Run orchestrations off the request thread, mirroring the existing <code>Run</code> worker. Reuse <code>runEventBus</code> — do NOT build a second bus (Anti-Pattern #1).</p>
+      <p class="step-meta"><strong>Files:</strong> modify <code>backend/src/queue/index.ts</code> (add <code>orchestration</code> queue + <code>enqueueOrchestration</code>); modify <code>backend/src/events/emitter.ts</code> (add <code>emitOrchestrationEvent</code>/<code>onOrchestrationEvent</code> keyed <code>orchestration:&lt;id&gt;</code>, mirroring the run helpers); create <code>backend/src/queue/orchestrationWorker.ts</code> (build <code>OrchestrationEngine</code> with real deps, persist status/events like <code>worker.ts</code>); add <code>worker:orchestration</code> script to <code>backend/package.json</code>.</p>
+      <div class="step-tests"><strong>Tests:</strong> LLM-free unit test for <code>onOrchestrationEvent</code>/<code>emitOrchestrationEvent</code> round-trip (subscribe → emit → handler receives event, keyed by id) in <code>test-units.ts</code>; worker boot smoke-check (process starts and registers the queue without throwing). <strong>Gate:</strong> <code>npm run typecheck &amp;&amp; npm run test:units</code> + worker boots.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 6 — Routes + SSE</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> Expose create/read/stream, mirroring <code>routes/runs.ts</code> conventions.</p>
+      <p class="step-meta"><strong>Files:</strong> create <code>backend/src/routes/orchestrations.ts</code> (<code>POST /</code>, <code>GET /:id</code>, <code>GET /</code> list, <code>GET /:id/events</code> SSE); register router in <code>backend/src/server.ts</code> at <code>/api/orchestrations</code>.</p>
+      <div class="step-tests"><strong>Tests:</strong> manual <code>curl POST /api/orchestrations</code> returns <code>{orchestrationId}</code>; SSE stream emits events (AC1). <strong>Gate:</strong> <code>npm run typecheck</code>.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 7a — Frontend types, API client, goal form</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> The data layer + entry point; lands before the live view that consumes it.</p>
+      <p class="step-meta"><strong>Files:</strong> modify <code>frontend/src/lib/types.ts</code> (orchestration types), <code>frontend/src/lib/api.ts</code> (client fns), <code>frontend/src/components/Sidebar.tsx</code> (Orchestrate entry); create <code>frontend/src/app/orchestrate/page.tsx</code> (goal form → POST → route to live view) (AC1).</p>
+      <div class="step-tests"><strong>Tests:</strong> <code>cd frontend && npx tsc --noEmit</code> — exit 0; manual: submit a goal, confirm redirect. <strong>Gate:</strong> frontend typecheck GREEN.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 7b — Live plan board</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> The live view; reuses the run-detail SSE/poll pattern.</p>
+      <p class="step-meta"><strong>Files:</strong> create <code>frontend/src/app/orchestrate/[id]/page.tsx</code> + <code>frontend/src/components/PlanBoard.tsx</code> (task cards, child-Run links to <code>/runs/[id]</code>, replan banner, partial badge — AC3, AC5).</p>
+      <div class="step-tests"><strong>Tests:</strong> <code>cd frontend && npx tsc --noEmit</code> — exit 0; manual: watch the board update live during a run. <strong>Gate:</strong> frontend typecheck GREEN.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-header"><span class="step-title">Step 8 — ADRs + end-to-end integration</span><span class="band">M</span></div>
+      <p class="step-meta"><strong>Rationale:</strong> Record the two architectural decisions; prove the whole loop on real data.</p>
+      <p class="step-meta"><strong>Files:</strong> create <code>docs/adr/0002-orchestration-run-model.md</code>, <code>docs/adr/0003-orchestration-queue.md</code> (drafted during planning — committed here).</p>
+      <div class="step-tests"><strong>Tests:</strong> live run — goal "Research Stripe and draft an outreach email" produces a child Run with a pitch and a non-empty <code>finalAnswer</code>; verify <code>partial</code> path with a deliberately hard goal + low <code>maxIterations</code>. Existing <code>test-system.ts</code> still passes (regression). <strong>Gate:</strong> manual acceptance against AC1–AC7.</div>
+    </div>
+  </section>
+
+  <section id="test-strategy">
+    <h2>Test Strategy</h2>
+    <table>
+      <thead><tr><th>Layer</th><th>What</th><th>Files</th></tr></thead>
+      <tbody>
+        <tr><td>Unit (LLM-free)</td><td><code>gradePipelineResult</code>; engine loop (stop-on-met, stop-on-cap, replan-applied, status transitions); pure prompt-builders</td><td><code>backend/src/test-units.ts</code></td></tr>
+        <tr><td>Integration</td><td>One live orchestration end-to-end (real LLM + Mongo + Redis)</td><td><code>backend/src/test-system.ts</code> (manual run) + manual curl</td></tr>
+        <tr><td>Manual</td><td>Open <code>/orchestrate</code>, submit a goal, watch the plan board; confirm partial badge + child-Run links</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="rollback-plan">
+    <h2>Rollback Plan</h2>
+    <p>Additive only. To undo: delete the <code>backend/src/orchestrator2/</code> dir, the orchestration model/worker/route files, and the frontend <code>app/orchestrate/</code> + <code>PlanBoard.tsx</code>; revert the additive insertions in <code>types.ts</code>, <code>server.ts</code>, <code>queue/index.ts</code>, <code>events/emitter.ts</code>, <code>config.ts</code>, <code>Sidebar.tsx</code>, <code>lib/*</code>. The new <code>orchestrationruns</code> Mongo collection is independent — drop it; no migration of existing <code>runs</code> data, no data loss. The existing <code>/new</code> pipeline path is untouched.</p>
+  </section>
+
+  <section id="risks">
+    <h2>Risks</h2>
+    <table>
+      <thead><tr><th>Risk</th><th>Step</th><th>Severity</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr><td>Phase A not merged → <code>runGate</code>/<code>test-units.ts</code> missing</td><td>2,3</td><td><span class="risk-h">HIGH</span></td><td>Hard prerequisite — build Phase A first (sequencing decided).</td></tr>
+        <tr><td>Planner emits invalid tool args (<code>args.lead</code> malformed)</td><td>2,4</td><td><span class="risk-m">MED</span></td><td>Validate/narrow <code>args.lead</code> at the tool trust boundary; mark task <code>failed</code> + feed to replan, don't crash.</td></tr>
+        <tr><td>Runaway/expensive loop (planner never satisfied)</td><td>3</td><td><span class="risk-m">MED</span></td><td><code>maxIterations</code> cap (default 6) → <code>partial=true</code> best-effort; per-task cost already bounded by Phase A gates.</td></tr>
+        <tr><td>Shared-file edit conflicts with Phase A</td><td>1,4,5</td><td><span class="risk-l">LOW</span></td><td>Land Phase A first; all edits additive (append-only to <code>types.ts</code>/<code>emitter.ts</code>/<code>config.ts</code>).</td></tr>
+        <tr><td>SSE event volume / leaked listeners</td><td>5,6</td><td><span class="risk-l">LOW</span></td><td>Reuse <code>runEventBus</code> pattern (maxListeners already raised); unsubscribe on stream close as runs route does.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="change-history">
+    <h2>Change History</h2>
+    <table>
+      <thead><tr><th>Date</th><th>Section</th><th>What Changed</th><th>Trigger</th></tr></thead>
+      <tbody>
+        <tr><td>2026-06-23</td><td>all</td><td>Initial draft from confirmed design.html + architect codebase scan</td><td>BILTIQ-001</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>

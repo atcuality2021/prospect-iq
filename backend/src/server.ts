@@ -6,6 +6,8 @@ import { leadsRouter } from './routes/leads';
 import { catalogRouter } from './routes/catalog';
 import { runsRouter } from './routes/runs';
 import { settingsRouter } from './routes/settings';
+import { orchestrationsRouter } from './routes/orchestrations';
+import { projectsRouter } from './routes/projects';
 
 const app = express();
 
@@ -16,6 +18,8 @@ app.use('/api/runs', runsRouter);
 app.use('/api/runs', leadsRouter);
 app.use('/api/catalog', catalogRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/orchestrations', orchestrationsRouter);
+app.use('/api/projects', projectsRouter);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

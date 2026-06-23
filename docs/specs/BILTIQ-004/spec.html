@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Spec: BILTIQ-004 Company-level chat</title>
+<style>body{font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111827;max-width:860px;margin:0 auto;padding:2rem 1rem;}
+h1{font-size:1.5rem;border-bottom:2px solid #e5e7eb;padding-bottom:1rem;margin-bottom:1.5rem;}h2{font-size:1.1rem;border-left:4px solid #e5e7eb;padding-left:.75rem;margin:1.5rem 0 .75rem;}
+code{font-family:ui-monospace,monospace;font-size:.85em;background:#f9fafb;padding:.1em .3em;border-radius:3px;}.meta{display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;font-size:.85rem;}.meta b{color:#6b7280;}
+.ac{list-style:none;padding:0;}.ac li{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:.5rem .75rem;margin-bottom:.4rem;font-size:.88rem;}.badge{font-size:.7rem;font-weight:700;color:#d97706;background:#fef3c7;border:1px solid #fcd34d;border-radius:9999px;padding:.1rem .4rem;margin-right:.4rem;}ul{padding-left:1.4rem;}</style></head><body>
+<h1>Spec: BILTIQ-004 — Company-level chat (P2 of Projects)</h1>
+<p class="meta"><span><b>Task</b> BILTIQ-004</span><span><b>Owner</b> @harish</span><span><b>Created</b> 2026-06-23</span><span><b>Wall-clock</b> M</span><span><b>Compliance</b> on_prem_preferred</span><span><b>Depends on</b> BILTIQ-003 (projects, grouping)</span></p>
+
+<h2>Problem</h2>
+<p>Chat today reasons over a single run (<code>/runs/:id/chat</code>). When a company has multiple research runs,
+there is no way to ask questions or refine pitches against the company's full accumulated history.</p>
+
+<h2>User Impact</h2>
+<p>From a project's company group, the user opens a chat that reasons over <strong>all of that company's runs</strong>
+(combined signals, profiles, pitches), so they can ask cross-run questions and improve outreach using everything known.</p>
+
+<h2>Acceptance Criteria</h2>
+<ul class="ac">
+<li><span class="badge">OPEN</span><b>AC1</b> — <code>POST /api/projects/:id/companies/:company/chat {message}</code> aggregates context from ALL runs in that project+company and returns an assistant reply via <code>llm/client</code>.</li>
+<li><span class="badge">OPEN</span><b>AC2</b> — Company chat history persists keyed by (projectId, normalized company) and is returned by <code>GET</code> on the same path; replies append to it.</li>
+<li><span class="badge">OPEN</span><b>AC3</b> — The aggregated context is built by a pure, unit-tested helper from a list of runs (dedupes/limits signals; includes each run's company/summary/top signals).</li>
+<li><span class="badge">OPEN</span><b>AC4</b> — The project detail page exposes a "Chat" affordance per company that opens a drawer talking to the company chat endpoint; messages render and persist across reloads.</li>
+<li><span class="badge">OPEN</span><b>AC5</b> — A company with zero runs cannot be chatted (button disabled / 400); existing per-run chat is unchanged.</li>
+<li><span class="badge">OPEN</span><b>AC6</b> — The context-builder helper has LLM-free unit tests (multiple runs merged; empty list; signal cap).</li>
+</ul>
+
+<h2>Out of Scope</h2>
+<ul><li>P3 (pipeline builds-on-prior), P4 (project synthesis). Cross-company/project-level chat. Streaming responses.</li></ul>
+
+<h2>Open Questions</h2>
+<ul><li>Resolved: company key = normalized lowercase company; history in a small <code>CompanyChat</code> collection keyed by (projectId, companyKey).</li></ul>
+</body></html>

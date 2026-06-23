@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Design: BILTIQ-004 Company chat</title>
+<style>body{font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111827;max-width:860px;margin:0 auto;padding:2rem 1rem;}
+h1{font-size:1.5rem;border-bottom:2px solid #e5e7eb;padding-bottom:1rem;margin-bottom:1.5rem;}h2{font-size:1.1rem;border-left:4px solid #e5e7eb;padding-left:.75rem;margin:1.5rem 0 .75rem;}h3{font-size:.95rem;margin:1rem 0 .4rem;}
+code{font-family:ui-monospace,monospace;font-size:.85em;background:#f9fafb;padding:.1em .3em;border-radius:3px;}table{width:100%;border-collapse:collapse;font-size:.85rem;}th,td{border:1px solid #e5e7eb;padding:.4rem .6rem;text-align:left;}th{background:#f9fafb;}ul{padding-left:1.4rem;}.tag{font-size:.7rem;font-weight:700;border-radius:9999px;padding:.1rem .4rem;}.new{background:#dcfce7;color:#16a34a;}.mod{background:#fef3c7;color:#d97706;}</style></head><body>
+<h1>Design: BILTIQ-004 — Company-level chat</h1>
+
+<h2>Approach</h2>
+<p>Extend the existing per-run chat pattern (<code>routes/runs.ts</code> <code>/:id/chat</code>: build context →
+<code>callText</code> → persist history) up to the company level. A new <code>CompanyChat</code> collection stores
+history keyed by (<code>projectId</code>, normalized <code>companyKey</code>). A pure <code>buildCompanyContext(runs)</code>
+helper merges all of a company's runs (top signals, summaries, latest pitch) into one system context. New chat
+endpoints live on the projects router. Frontend adds a per-company "Chat" drawer on the project detail page,
+mirroring the existing run <code>ChatDrawer</code>.</p>
+
+<h2>Alternatives Considered</h2>
+<ul>
+<li>Store history on the Project doc as a map — rejected: unbounded growth on one doc; a keyed collection is cleaner.</li>
+<li>Re-use <code>/:id/chat</code> with a synthetic merged run — rejected: muddies the run model; a dedicated aggregator is clearer.</li>
+</ul>
+
+<h2>Files to Touch</h2>
+<h3>New <span class="tag new">CREATE</span></h3>
+<table><tr><th>File</th><th>Purpose</th></tr>
+<tr><td><code>backend/src/db/models/companyChat.ts</code></td><td><code>CompanyChatModel</code> ({ projectId, companyKey, company, history: ChatMessage[] }).</td></tr>
+<tr><td><code>backend/src/util/companyContext.ts</code></td><td>Pure <code>buildCompanyContext(runs)</code> → system-context string (top signals merged, capped; summaries; latest pitch).</td></tr>
+<tr><td><code>frontend/src/components/CompanyChatDrawer.tsx</code></td><td>Per-company chat drawer (send/list), mirrors run <code>ChatDrawer</code>.</td></tr>
+<tr><td><code>docs/adr/0006-company-chat-collection.md</code></td><td>ADR: keyed CompanyChat collection.</td></tr>
+</table>
+<h3>Modified <span class="tag mod">EDIT</span></h3>
+<table><tr><th>File</th><th>Change</th></tr>
+<tr><td><code>backend/src/types.ts</code></td><td>Add <code>CompanyChat</code> interface (reuses <code>ChatMessage</code>).</td></tr>
+<tr><td><code>backend/src/routes/projects.ts</code></td><td>Add <code>GET</code> + <code>POST /:id/companies/:company/chat</code> (aggregate runs → <code>buildCompanyContext</code> → <code>callText</code> → persist).</td></tr>
+<tr><td><code>backend/src/test-units.ts</code></td><td><code>buildCompanyContext</code> tests (merge, empty, signal cap).</td></tr>
+<tr><td><code>frontend/src/lib/api.ts</code></td><td><code>getCompanyChat</code>, <code>sendCompanyChat</code>.</td></tr>
+<tr><td><code>frontend/src/app/projects/[id]/page.tsx</code></td><td>Per-company "Chat" button → opens <code>CompanyChatDrawer</code>.</td></tr>
+<tr><td><code>CHANGELOG.md</code></td><td>Unreleased entry.</td></tr>
+</table>
+
+<h2>Data / Compliance / Rollout</h2>
+<p>Additive: one new collection. Compliance unchanged — chat goes through <code>callText</code> (switchable adapter),
+no new external dep. Per-run chat untouched. Empty company → 400 / disabled button.</p>
+
+<h2>Risks</h2>
+<ul><li>Large companies → big context: cap merged signals (e.g. top 12) in <code>buildCompanyContext</code>.</li>
+<li>Company key drift vs grouping: reuse <code>normalizeCompany</code> for the key so chat + grouping agree.</li></ul>
+
+<h2>Suggested ADR</h2><p>ADR-0006 — CompanyChat keyed collection.</p>
+</body></html>

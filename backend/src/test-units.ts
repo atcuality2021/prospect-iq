@@ -1,0 +1,369 @@
+/**
+ * LLM-free unit tests for Phase A gate logic.
+ * Run: npm run test:units   (from backend/)
+ */
+import { runGate } from './orchestrator/gate';
+import { RunEvent } from './types';
+import { config } from './config';
+import { buildVerificationPrompt } from './orchestrator/nodes/verification';
+import { gradeResearch, evaluatePitchCritique } from './orchestrator/grading';
+import { gradePipelineResult } from './orchestrator2/result-gate';
+import { OrchestrationEngine, EngineDeps, TaskResult } from './orchestrator2/engine';
+import { rankResults } from './orchestrator2/aggregate';
+import { normalizeCompany, groupRunsByCompany } from './util/groupByCompany';
+import { buildCompanyContext } from './util/companyContext';
+import { PlanTask } from './types';
+import { buildPlannerPrompt, capTasks } from './orchestrator2/planner';
+import { buildReplanPrompt } from './orchestrator2/replanner';
+import { buildGraderPrompt } from './orchestrator2/goal-grader';
+import { buildSynthesisPrompt } from './orchestrator2/synthesizer';
+import { emitOrchestrationEvent, onOrchestrationEvent } from './events/emitter';
+import { OrchestrationEvent } from './types';
+
+let passed = 0;
+let failed = 0;
+
+function assert(label: string, cond: boolean, detail = '') {
+  console.log(`${cond ? '✅' : '❌'} ${label}${detail ? `  →  ${detail}` : ''}`);
+  cond ? passed++ : failed++;
+}
+
+// ── gate primitive ──────────────────────────────────────────────────────────
+type S = { value: number };
+
+async function gateTests() {
+  // 1. pass on first grade → no revision
+  {
+    const events: RunEvent[] = [];
+    let reviserCalls = 0;
+    const out = await runGate<S>({ value: 5 }, {
+      name: 'g',
+      grader: async (s) => ({ pass: s.value >= 3, score: s.value, feedback: 'ok' }),
+      reviser: async (s) => { reviserCalls++; return { value: s.value + 1 }; },
+      maxRevisions: 2,
+      emit: async (e) => { events.push(e); },
+    });
+    assert('pass-first: passed=true', out.passed === true);
+    assert('pass-first: 1 attempt', out.attempts.length === 1, `got ${out.attempts.length}`);
+    assert('pass-first: reviser never called', reviserCalls === 0);
+    assert('pass-first: emits gate_start + gate_attempt + gate_pass',
+      events.map((e) => e.type).join(',') === 'gate_start,gate_attempt,gate_pass',
+      events.map((e) => e.type).join(','));
+  }
+
+  // 2. fail then pass after revisions
+  {
+    let reviserCalls = 0;
+    const out = await runGate<S>({ value: 1 }, {
+      name: 'g',
+      grader: async (s) => ({ pass: s.value >= 3, score: s.value, feedback: 'x' }),
+      reviser: async (s) => { reviserCalls++; return { value: s.value + 1 }; },
+      maxRevisions: 3,
+      emit: async () => {},
+    });
+    assert('fail-then-pass: passed=true', out.passed === true);
+    assert('fail-then-pass: 3 attempts', out.attempts.length === 3, `got ${out.attempts.length}`);
+    assert('fail-then-pass: 2 revisions', reviserCalls === 2, `got ${reviserCalls}`);
+    assert('fail-then-pass: final state value=3', out.state.value === 3, `got ${out.state.value}`);
+  }
+
+  // 3. never pass → exhausts to maxRevisions
+  {
+    let reviserCalls = 0;
+    const events: RunEvent[] = [];
+    const out = await runGate<S>({ value: 0 }, {
+      name: 'g',
+      grader: async (s) => ({ pass: false, score: s.value, feedback: 'never' }),
+      reviser: async (s) => { reviserCalls++; return { value: s.value }; },
+      maxRevisions: 2,
+      emit: async (e) => { events.push(e); },
+    });
+    assert('exhaust: passed=false', out.passed === false);
+    assert('exhaust: 3 attempts (1 + 2 revisions)', out.attempts.length === 3, `got ${out.attempts.length}`);
+    assert('exhaust: reviser called twice', reviserCalls === 2, `got ${reviserCalls}`);
+    assert('exhaust: terminal event is gate_fail',
+      events[events.length - 1].type === 'gate_fail', events[events.length - 1].type);
+  }
+
+  // 4. maxRevisions=0 → single pass, never revises
+  {
+    let reviserCalls = 0;
+    const out = await runGate<S>({ value: 0 }, {
+      name: 'g',
+      grader: async (s) => ({ pass: false, score: s.value, feedback: 'single' }),
+      reviser: async (s) => { reviserCalls++; return { value: s.value }; },
+      maxRevisions: 0,
+      emit: async () => {},
+    });
+    assert('disabled: 1 attempt', out.attempts.length === 1, `got ${out.attempts.length}`);
+    assert('disabled: reviser never called', reviserCalls === 0);
+    assert('disabled: passed=false', out.passed === false);
+  }
+}
+
+// ── config ──────────────────────────────────────────────────────────────────
+async function configTests() {
+  assert('config.gates.minVerifiedFacts default 2', config.gates.minVerifiedFacts === 2, `got ${config.gates.minVerifiedFacts}`);
+  assert('config.gates.researchRevisions default 1', config.gates.researchRevisions === 1, `got ${config.gates.researchRevisions}`);
+  assert('config.gates.pitchRevisions default 2', config.gates.pitchRevisions === 2, `got ${config.gates.pitchRevisions}`);
+  assert('config.gates.pitchQualityThreshold default 70', config.gates.pitchQualityThreshold === 70, `got ${config.gates.pitchQualityThreshold}`);
+  assert('config.orchFanoutConcurrency default 4', config.orchFanoutConcurrency === 4, `got ${config.orchFanoutConcurrency}`);
+  assert('config.orchMaxTargets default 10', config.orchMaxTargets === 10, `got ${config.orchMaxTargets}`);
+}
+
+// ── verification prompt builder ───────────────────────────────────────────────
+async function verificationTests() {
+  const sources = [{ source: 'website', text: 'Acme builds rockets.' }];
+  const p60 = buildVerificationPrompt(sources, 60);
+  const p40 = buildVerificationPrompt(sources, 40);
+  assert('prompt includes floor 60', p60.includes('confidence ≥ 60'));
+  assert('relaxed prompt includes floor 40', p40.includes('confidence ≥ 40'));
+  assert('prompt includes source header', p60.includes('=== WEBSITE ==='));
+  assert('prompt includes source text', p60.includes('Acme builds rockets.'));
+}
+
+// ── graders ───────────────────────────────────────────────────────────────────
+async function gradingTests() {
+  const fail = gradeResearch(0, 2);
+  assert('gradeResearch 0/2 fails', fail.pass === false);
+  assert('gradeResearch fail score = count', fail.score === 0);
+  const pass = gradeResearch(3, 2);
+  assert('gradeResearch 3/2 passes', pass.pass === true);
+  const edge = gradeResearch(2, 2);
+  assert('gradeResearch 2/2 passes (>=)', edge.pass === true);
+
+  const base = { missingSignalRefs: [], ctaStrength: 'strong' as const, needsRevision: false, summaryNotes: 'n' };
+  const good = evaluatePitchCritique({ ...base, genericLanguageIssues: [], overallQuality: 80 }, 70);
+  assert('pitch 80>=70 & no generic → pass', good.pass === true);
+  assert('pitch pass score=80', good.score === 80);
+  const lowScore = evaluatePitchCritique({ ...base, genericLanguageIssues: [], overallQuality: 60 }, 70);
+  assert('pitch 60<70 → fail', lowScore.pass === false);
+  const generic = evaluatePitchCritique({ ...base, genericLanguageIssues: ['Dear Sir'], overallQuality: 90 }, 70);
+  assert('pitch high score but generic language → fail', generic.pass === false);
+}
+
+// ── orchestrator2: result gate ────────────────────────────────────────────────
+async function resultGateTests() {
+  const pitch = { channel: 'email' as const, body: 'b', callToAction: 'c', personalizationPoints: [], score: 80 };
+  assert('result-gate: pitch + confident → pass', gradePipelineResult({ pitch, lowConfidence: false }).pass === true);
+  assert('result-gate: pitch score passes through', gradePipelineResult({ pitch, lowConfidence: false }).score === 80);
+  assert('result-gate: pitch but lowConfidence → fail', gradePipelineResult({ pitch, lowConfidence: true }).pass === false);
+  assert('result-gate: no pitch → fail', gradePipelineResult({ pitch: undefined, lowConfidence: false }).pass === false);
+}
+
+// ── orchestrator2: engine ─────────────────────────────────────────────────────
+function mkTask(id: string): PlanTask {
+  return { id, tool: 'run_research_pipeline', args: {}, rationale: 'r', status: 'pending' };
+}
+function mkDeps(over: Partial<EngineDeps>): EngineDeps {
+  return {
+    planner: async () => [mkTask('t1')],
+    replanner: async () => [],
+    grader: async () => ({ met: true, reasoning: 'ok', score: 100 }),
+    synthesizer: async () => 'final',
+    tools: { run_research_pipeline: async () => ({ ok: true, summary: 's', childRunId: 'r1' }) },
+    ...over,
+  };
+}
+
+async function engineTests() {
+  // stop-on-met
+  {
+    const eng = new OrchestrationEngine(mkDeps({}), async () => {});
+    const out = await eng.run({ orchestrationId: 'o1', goal: 'g', maxIterations: 6 });
+    assert('engine stop-on-met: goalMet=true', out.goalMet === true);
+    assert('engine stop-on-met: 1 iteration', out.iterations === 1, `got ${out.iterations}`);
+    assert('engine stop-on-met: task done', out.plan[0].status === 'done');
+    assert('engine stop-on-met: finalAnswer set', out.finalAnswer === 'final');
+  }
+  // stop-on-cap
+  {
+    const eng = new OrchestrationEngine(
+      mkDeps({ grader: async () => ({ met: false, reasoning: 'no', score: 0 }) }),
+      async () => {},
+    );
+    const out = await eng.run({ orchestrationId: 'o2', goal: 'g', maxIterations: 3 });
+    assert('engine stop-on-cap: goalMet=false', out.goalMet === false);
+    assert('engine stop-on-cap: partial=true', out.partial === true);
+    assert('engine stop-on-cap: iterations=3', out.iterations === 3, `got ${out.iterations}`);
+  }
+}
+
+async function engineReplanTests() {
+  // replan-applied: grader meets on 2nd pass; replanner injects a new pending task.
+  {
+    let graderCalls = 0;
+    const eng = new OrchestrationEngine(
+      mkDeps({
+        grader: async () => { graderCalls++; return { met: graderCalls >= 2, reasoning: 'r', score: 50 }; },
+        replanner: async () => [mkTask('t2')],
+      }),
+      async () => {},
+    );
+    const out = await eng.run({ orchestrationId: 'o3', goal: 'g', maxIterations: 6 });
+    assert('engine replan: 2 iterations', out.iterations === 2, `got ${out.iterations}`);
+    assert('engine replan: injected task ran (2 tasks done)',
+      out.plan.length === 2 && out.plan.every((t) => t.status === 'done'),
+      out.plan.map((t) => `${t.id}:${t.status}`).join(','));
+    assert('engine replan: t2 present', out.plan.some((t) => t.id === 't2'));
+  }
+  // status-transition: a failing tool marks the task failed, not done.
+  {
+    const eng = new OrchestrationEngine(
+      mkDeps({ tools: { run_research_pipeline: async () => ({ ok: false, summary: 'no pitch' }) } }),
+      async () => {},
+    );
+    const out = await eng.run({ orchestrationId: 'o4', goal: 'g', maxIterations: 1 });
+    assert('engine status: failed task → status=failed', out.plan[0].status === 'failed');
+    assert('engine status: failed task → gatePassed=false', out.plan[0].gatePassed === false);
+  }
+}
+
+// ── orchestrator2: planner / replanner prompt builders ────────────────────────
+async function plannerTests() {
+  const p = buildPlannerPrompt('Research Stripe', { company: 'Stripe' });
+  assert('planner prompt includes goal', p.includes('Research Stripe'));
+  assert('planner prompt names the tool', p.includes('run_research_pipeline'));
+  assert('planner prompt includes hints', p.includes('"company":"Stripe"') || p.includes('Stripe'));
+  const rp = buildReplanPrompt('Outreach goal', [{ summary: 'did X', ok: true }]);
+  assert('replan prompt includes goal', rp.includes('Outreach goal'));
+  assert('replan prompt includes completed summary', rp.includes('did X'));
+  assert('replan prompt empty → nothing yet', buildReplanPrompt('G', []).includes('nothing yet'));
+
+  // fan-out: prompt mentions cap + own-knowledge expansion; capTasks trims excess.
+  const pcap = buildPlannerPrompt('top fintechs', undefined, 10);
+  assert('planner prompt states max targets', pcap.includes('at most 10'));
+  assert('planner prompt forbids web expansion', pcap.toLowerCase().includes('own knowledge') && pcap.toLowerCase().includes('not browse'));
+  const many = Array.from({ length: 15 }, (_v, i) => ({ id: `t${i}`, tool: 'run_research_pipeline' as const, args: {}, rationale: 'r', status: 'pending' as const }));
+  assert('capTasks trims 15 → 10', capTasks(many, 10).length === 10);
+  assert('capTasks never below 1', capTasks(many, 0).length === 1);
+}
+
+// ── orchestrator2: grader / synthesizer prompt builders ───────────────────────
+async function graderSynthTests() {
+  const g = buildGraderPrompt('Goal X', ['summary one']);
+  assert('grader prompt includes goal', g.includes('Goal X'));
+  assert('grader prompt includes work summary', g.includes('summary one'));
+  assert('grader prompt empty → nothing yet', buildGraderPrompt('G', []).includes('nothing yet'));
+  assert('grader prompt is coverage-aware', g.toLowerCase().includes('coverage') && g.toLowerCase().includes('targets'));
+  assert('grader prompt drops single-perfect demand', g.includes('do NOT need one perfect output'));
+  const s = buildSynthesisPrompt('Goal Y', ['did Y']);
+  assert('synth prompt includes goal', s.includes('Goal Y'));
+  assert('synth prompt includes summary', s.includes('did Y'));
+  assert('synth prompt empty → no research', buildSynthesisPrompt('Z', []).includes('no research'));
+}
+
+// ── orchestration event bus (keyed pub/sub) ───────────────────────────────────
+async function emitterTests() {
+  let received: OrchestrationEvent | null = null;
+  const off = onOrchestrationEvent('oX', (e) => { received = e; });
+  emitOrchestrationEvent('oX', { type: 'orchestration_start', timestamp: new Date() });
+  assert('emitter: handler received event', received !== null && (received as OrchestrationEvent).type === 'orchestration_start');
+  off();
+
+  received = null;
+  emitOrchestrationEvent('oX', { type: 'plan_created', timestamp: new Date() });
+  assert('emitter: unsubscribed handler not called', received === null);
+
+  let other: OrchestrationEvent | null = null;
+  const off2 = onOrchestrationEvent('oY', (e) => { other = e; });
+  emitOrchestrationEvent('oX', { type: 'goal_graded', timestamp: new Date() });
+  assert('emitter: keyed by id (oY not notified for oX)', other === null);
+  off2();
+}
+
+// ── orchestrator2: fan-out aggregation ────────────────────────────────────────
+function mkResult(id: string, ok: boolean, score: number): TaskResult {
+  return {
+    task: { id, tool: 'run_research_pipeline', args: {}, rationale: 'r', status: ok ? 'done' : 'failed' },
+    result: { summary: id, ok, score },
+  };
+}
+async function aggregateTests() {
+  const ranked = rankResults([
+    mkResult('lowOk', true, 40),
+    mkResult('failHigh', false, 95),
+    mkResult('highOk', true, 90),
+  ]);
+  assert('rank: ok+high first', ranked[0].task.id === 'highOk', ranked.map((r) => r.task.id).join(','));
+  assert('rank: ok+low second', ranked[1].task.id === 'lowOk');
+  assert('rank: failed last despite high score', ranked[2].task.id === 'failHigh');
+  assert('rank: empty input safe', rankResults([]).length === 0);
+}
+
+// ── orchestrator2: fan-out bounded parallelism ────────────────────────────────
+async function engineFanoutTests() {
+  let inFlight = 0;
+  let peak = 0;
+  const tool = async () => {
+    inFlight++; peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, 5));
+    inFlight--;
+    return { ok: true, summary: 's', score: 50 };
+  };
+  let synthInput: TaskResult[] = [];
+  const deps = mkDeps({
+    planner: async () => [mkTask('a'), mkTask('b'), mkTask('c'), mkTask('d'), mkTask('e')],
+    tools: { run_research_pipeline: tool },
+    synthesizer: async (_g, results) => { synthInput = results; return 'final'; },
+  });
+  const eng = new OrchestrationEngine(deps, async () => {}, { concurrency: 2 });
+  const out = await eng.run({ orchestrationId: 'of', goal: 'g', maxIterations: 1 });
+  assert('fanout: all 5 tasks ran', out.plan.length === 5 && out.plan.every((t) => t.status === 'done'));
+  assert('fanout: peak in-flight bounded by concurrency=2', peak === 2, `peak=${peak}`);
+  assert('fanout: synthesizer received ranked results (5)', synthInput.length === 5);
+}
+
+// ── projects: company grouping ────────────────────────────────────────────────
+async function groupTests() {
+  assert('normalizeCompany trims', normalizeCompany('  Stripe ') === 'Stripe');
+  assert('normalizeCompany blank → Unassigned', normalizeCompany('') === 'Unassigned' && normalizeCompany(undefined) === 'Unassigned');
+  const groups = groupRunsByCompany([
+    { lead: { company: 'Stripe' } },
+    { lead: { company: ' stripe ' } },
+    { lead: { company: '' } },
+    { lead: {} },
+  ]);
+  const stripe = groups.find((g) => g.company.toLowerCase() === 'stripe');
+  assert('group: Stripe variants merge (2)', stripe?.runs.length === 2, `${stripe?.runs.length}`);
+  const un = groups.find((g) => g.company === 'Unassigned');
+  assert('group: blanks → Unassigned (2)', un?.runs.length === 2, `${un?.runs.length}`);
+  assert('group: empty input → []', groupRunsByCompany([]).length === 0);
+}
+
+// ── company chat context ──────────────────────────────────────────────────────
+async function companyContextTests() {
+  const ctx = buildCompanyContext('Stripe', [
+    { profile: { summary: 'sum A', signals: [{ title: 'S1', description: 'd1', relevance: 'high' }] } },
+    { profile: { summary: 'sum B', signals: [{ title: 'S1', description: 'd1', relevance: 'high' }, { title: 'S2', description: 'd2', relevance: 'medium' }] }, pitch: { body: 'pitch body' } },
+  ]);
+  assert('companyContext merges both summaries', ctx.includes('sum A') && ctx.includes('sum B'));
+  assert('companyContext dedupes signals by title', (ctx.match(/S1:/g) ?? []).length === 1);
+  assert('companyContext includes S2', ctx.includes('S2'));
+  assert('companyContext includes latest pitch', ctx.includes('pitch body'));
+  assert('companyContext empty → no research', buildCompanyContext('X', []).includes('no research yet'));
+  const many = Array.from({ length: 20 }, (_v, i) => ({ title: `T${i}`, description: 'd', relevance: 'low' }));
+  const capped = buildCompanyContext('Y', [{ profile: { summary: 's', signals: many } }]);
+  assert('companyContext caps signals at 12', (capped.match(/• \[/g) ?? []).length === 12, `${(capped.match(/• \[/g) ?? []).length}`);
+}
+
+async function main() {
+  await gateTests();
+  await groupTests();
+  await companyContextTests();
+  await configTests();
+  await verificationTests();
+  await gradingTests();
+  await resultGateTests();
+  await engineTests();
+  await engineReplanTests();
+  await aggregateTests();
+  await engineFanoutTests();
+  await plannerTests();
+  await graderSynthTests();
+  await emitterTests();
+  console.log(`\n${passed}/${passed + failed} passed${failed ? ` — ${failed} FAILED` : ' 🎉'}`);
+  process.exit(failed ? 1 : 0);
+}
+
+main().catch((err) => { console.error(err); process.exit(1); });

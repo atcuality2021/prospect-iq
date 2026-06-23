@@ -10,6 +10,7 @@ export const runsRouter = Router();
 runsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const filter: Record<string, unknown> = {};
   if (req.query.saved === 'true') filter.saved = true;
+  if (typeof req.query.projectId === 'string') filter.projectId = req.query.projectId;
   const runs = await RunModel.find(filter).sort({ createdAt: -1 }).limit(50).lean();
   res.json(runs);
 });
@@ -79,10 +80,12 @@ runsRouter.post('/:id/rerun', async (req: Request, res: Response): Promise<void>
   const original = await RunModel.findOne({ runId: req.params.id }).lean();
   if (!original) { res.status(404).json({ error: 'Not found' }); return; }
 
-  const lead = { ...original.lead, ...req.body };
+  const { projectId: bodyProjectId, ...leadOverrides } = req.body as Record<string, unknown>;
+  const lead = { ...original.lead, ...leadOverrides };
+  const projectId = (typeof bodyProjectId === 'string' ? bodyProjectId : undefined) ?? original.projectId;
   const runId = uuidv4();
 
-  await RunModel.create({ runId, lead, status: 'queued', events: [] });
+  await RunModel.create({ runId, lead, status: 'queued', events: [], ...(projectId && { projectId }) });
   await enqueueRun(runId, lead);
   res.status(201).json({ runId });
 });

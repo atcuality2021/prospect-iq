@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spec: Dynamic Orchestrator — Increment 2 (Multi-target fan-out)</title>
+  <style>
+    :root{--color-ac-open:#d97706;--color-ac-done:#16a34a;--color-border:#e5e7eb;--color-bg:#fff;--color-bg-subtle:#f9fafb;--color-text:#111827;--color-muted:#6b7280;--radius:6px;--max-width:860px;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.6;color:var(--color-text);background:var(--color-bg);padding:2rem 1rem;}
+    main{max-width:var(--max-width);margin:0 auto;}
+    header{border-bottom:2px solid var(--color-border);padding-bottom:1.25rem;margin-bottom:2rem;}
+    header h1{font-size:1.5rem;margin-bottom:0.75rem;}
+    .meta{display:flex;flex-wrap:wrap;gap:0.5rem 1.5rem;}
+    .meta dt{font-weight:600;color:var(--color-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;}
+    .meta dd{font-size:0.9rem;}
+    section{margin-bottom:2rem;}
+    h2{font-size:1.1rem;font-weight:700;border-left:4px solid var(--color-border);padding-left:0.75rem;margin-bottom:0.75rem;}
+    p,li{margin-bottom:0.4rem;} ul{padding-left:1.4rem;}
+    code{font-family:ui-monospace,monospace;font-size:0.85em;background:var(--color-bg-subtle);padding:0.1em 0.3em;border-radius:3px;}
+    .ac-list{list-style:none;padding:0;display:flex;flex-direction:column;gap:0.4rem;}
+    .ac-item{display:flex;align-items:flex-start;gap:0.6rem;padding:0.5rem 0.75rem;border-radius:var(--radius);background:var(--color-bg-subtle);border:1px solid var(--color-border);}
+    .ac-badge{font-size:0.7rem;font-weight:700;padding:0.15rem 0.45rem;border-radius:9999px;white-space:nowrap;flex-shrink:0;background:#fef3c7;color:var(--color-ac-open);border:1px solid #fcd34d;}
+    .ac-label{font-size:0.85rem;}
+    table{width:100%;border-collapse:collapse;font-size:0.85rem;} th,td{text-align:left;padding:0.5rem 0.75rem;border:1px solid var(--color-border);} th{background:var(--color-bg-subtle);font-weight:600;}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Spec: Dynamic Orchestrator — Increment 2 (Multi-target fan-out)</h1>
+    <dl class="meta">
+      <div><dt>Task ID</dt><dd>BILTIQ-002</dd></div>
+      <div><dt>Owner</dt><dd>@harish</dd></div>
+      <div><dt>Created</dt><dd>2026-06-23</dd></div>
+      <div><dt>Wall-clock</dt><dd>L</dd></div>
+      <div><dt>Compliance</dt><dd>on_prem_preferred</dd></div>
+      <div><dt>Depends on</dt><dd>BILTIQ-001 (engine, tools, result gate)</dd></div>
+    </dl>
+  </header>
+
+  <section id="problem">
+    <h2>Problem</h2>
+    <p>Increment 1 runs targets one task at a time, sequentially. A batch goal ("research these 8 fintechs"
+    or "the top 5 EU payment processors") works only serially — slow (N full pipelines back-to-back) — and
+    the orchestrator has no notion of covering a <em>list</em> and comparing the results. The Inc 1 e2e also
+    showed the goal grader is too strict for batch intent: it demands a single perfect output and rejects a
+    set of decent ones.</p>
+  </section>
+
+  <section id="user-impact">
+    <h2>User Impact</h2>
+    <p>A user can state a multi-target goal and get all prospects researched concurrently with a ranked,
+    honest coverage report — not a slow serial crawl. Explicit lists run as given; descriptive goals are
+    expanded by the planner from its own knowledge (no web — that is Increment 4).</p>
+  </section>
+
+  <section id="acceptance-criteria">
+    <h2>Acceptance Criteria</h2>
+    <ul class="ac-list">
+      <li class="ac-item"><span class="ac-badge">OPEN</span><span class="ac-label"><strong>AC1</strong> — A goal with an explicit list of T targets produces T <code>run_research_pipeline</code> tasks (one per target).</span></li>
+      <li class="ac-item"><span class="ac-badge">OPEN</span><span class="ac-label"><strong>AC2</strong> — A descriptive goal ("top 5 X") makes the planner emit up to <code>ORCH_MAX_TARGETS</code> tasks from its own knowledge, with no web call; planner-expanded results are flagged as such in the output.</span></li>
+      <li class="ac-item"><span class="ac-badge">OPEN</span><span class="ac-label"><strong>AC3</strong> — The engine runs independent <code>pending</code> tasks concurrently, with never more than <code>ORCH_FANOUT_CONCURRENCY</code> (default 4) in flight at once.</span></li>
+      <li class="ac-item"><span class="ac-badge">OPEN</span><span class="ac-label"><strong>AC4</strong> — Each task is gated independently (reusing the Inc 1 result gate); one failing/low-confidence target does NOT abort the others.</span></li>
+      <li class="ac-item"><span class="ac-badge">OPEN</span><span class="ac-label"><strong>AC5</strong> — An aggregation step ranks completed results by pitch score (with <code>lowConfidence</code> de-prioritized) before the synthesizer runs, so the final answer presents targets best-first.</span></li>
+      <li class="ac-item"><span class="ac-badge">OPEN</span><span class="ac-label"><strong>AC6</strong> — For a multi-target goal, the goal grader grades coverage ("M of N targets have confident pitches") rather than demanding one perfect output; a fully-covered batch returns <code>goalMet=true</code>.</span></li>
+      <li class="ac-item"><span class="ac-badge">OPEN</span><span class="ac-label"><strong>AC7</strong> — Target count is capped at <code>ORCH_MAX_TARGETS</code> (default 10); excess targets are dropped with a logged/emitted note — no silent truncation.</span></li>
+      <li class="ac-item"><span class="ac-badge">OPEN</span><span class="ac-label"><strong>AC8</strong> — Engine bounded-parallel execution, the ranking function, and the coverage-grader prompt builder are covered by LLM-free unit tests (concurrency cap respected; ranking order; coverage prompt content).</span></li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h2>Out of Scope</h2>
+    <ul>
+      <li>Web-based discovery of the target list (Increment 4).</li>
+      <li>Granular per-phase tools (Increment 3).</li>
+      <li>Cross-target dedup/merge beyond ranking; comparison narratives.</li>
+      <li>Resuming a partially-failed fan-out.</li>
+    </ul>
+  </section>
+
+  <section id="open-questions">
+    <h2>Open Questions</h2>
+    <ul>
+      <li>Resolved: list source = explicit + planner expansion (no web); execution = bounded parallel in the engine (no new tool); caps = K=4 concurrency, N=10 targets.</li>
+    </ul>
+  </section>
+
+  <section id="change-history">
+    <h2>Change History</h2>
+    <table>
+      <thead><tr><th>Date</th><th>Section</th><th>What Changed</th><th>Trigger</th></tr></thead>
+      <tbody><tr><td>2026-06-23</td><td>all</td><td>Initial draft from approved brainstorm summary</td><td>BILTIQ-002</td></tr></tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>

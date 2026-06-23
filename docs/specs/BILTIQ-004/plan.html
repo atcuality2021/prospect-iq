@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Plan: BILTIQ-004 Company chat</title>
+<style>body{font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111827;max-width:860px;margin:0 auto;padding:2rem 1rem;}
+h1{font-size:1.5rem;border-bottom:2px solid #e5e7eb;padding-bottom:1rem;margin-bottom:1.5rem;}h2{font-size:1.1rem;border-left:4px solid #e5e7eb;padding-left:.75rem;margin:1.5rem 0 .75rem;}
+code{font-family:ui-monospace,monospace;font-size:.85em;background:#f9fafb;padding:.1em .3em;border-radius:3px;}.step{border:1px solid #bbf7d0;background:#f0fdf4;border-radius:6px;padding:.85rem 1.1rem;margin-bottom:.9rem;}.t{font-weight:700;}.b{font-size:.7rem;font-weight:700;background:#e0f2fe;color:#0369a1;border-radius:9999px;padding:.1rem .5rem;float:right;}.m{font-size:.82rem;color:#374151;margin:.3rem 0;}table{width:100%;border-collapse:collapse;font-size:.85rem;}th,td{border:1px solid #e5e7eb;padding:.4rem .6rem;text-align:left;}th{background:#f9fafb;}</style></head><body>
+<h1>Plan: BILTIQ-004 — Company-level chat</h1>
+<p class="m"><b>Branch</b> feat/loop-engineering · each step = one commit · TDD via <code>npm run test:units</code> · <code>BILTIQ-004: &lt;step&gt;</code>.</p>
+
+<div class="step"><span class="b">M</span><span class="t">Step 1 — CompanyChat model + types + buildCompanyContext util + tests</span>
+<p class="m"><b>Files:</b> create <code>backend/src/db/models/companyChat.ts</code>, <code>backend/src/util/companyContext.ts</code>; modify <code>backend/src/types.ts</code> (<code>CompanyChat</code>), <code>backend/src/test-units.ts</code>.</p>
+<p class="m"><b>buildCompanyContext(runs):</b> merge company name, each run's summary + top signals (cap ~12 across runs, dedupe by title), latest pitch. Empty → "(no research yet)".</p>
+<p class="m"><b>Tests:</b> 2 runs merge into one context incl. both summaries; signal cap respected; empty list safe. <b>Gate:</b> <code>npm run test:units &amp;&amp; npm run typecheck</code>. (AC2, AC3, AC6)</p></div>
+
+<div class="step"><span class="b">M</span><span class="t">Step 2 — Company chat routes</span>
+<p class="m"><b>Files:</b> <code>backend/src/routes/projects.ts</code> — add <code>GET /:id/companies/:company/chat</code> (history) and <code>POST</code> (aggregate runs by projectId + <code>normalizeCompany</code> match → <code>buildCompanyContext</code> → <code>callText</code> → append to <code>CompanyChatModel</code>). 400 when no runs.</p>
+<p class="m"><b>Tests:</b> manual curl. <b>Gate:</b> <code>typecheck</code>. (AC1, AC2, AC5)</p></div>
+
+<div class="step"><span class="b">M</span><span class="t">Step 3 — Frontend drawer + wire into project detail</span>
+<p class="m"><b>Files:</b> create <code>frontend/src/components/CompanyChatDrawer.tsx</code>; modify <code>frontend/src/lib/api.ts</code> (<code>getCompanyChat</code>/<code>sendCompanyChat</code>), <code>frontend/src/app/projects/[id]/page.tsx</code> (per-company "Chat" button → drawer; disabled when 0 runs).</p>
+<p class="m"><b>Gate:</b> <code>cd frontend &amp;&amp; npx tsc --noEmit</code>. (AC4, AC5)</p></div>
+
+<div class="step"><span class="b">M</span><span class="t">Step 4 — ADR + CHANGELOG + verification</span>
+<p class="m"><b>Files:</b> create <code>docs/adr/0006-company-chat-collection.md</code>; <code>CHANGELOG.md</code>. Full suite + both typechecks; live: open a company's chat, send a message, get a reply grounded in its runs.</p>
+<p class="m"><b>Gate:</b> green suite + Playwright/curl check. (manual AC1–AC5)</p></div>
+
+<h2>Test Strategy</h2>
+<table><tr><th>Layer</th><th>What</th></tr><tr><td>Unit (LLM-free)</td><td><code>buildCompanyContext</code> merge/cap/empty</td></tr><tr><td>Manual</td><td>company chat round-trip via UI/curl</td></tr></table>
+
+<h2>Rollback</h2><p>Additive. Remove the model/util/drawer/routes; drop the <code>companychats</code> collection. Per-run chat untouched.</p>
+
+<h2>Risks</h2>
+<table><tr><th>Risk</th><th>Sev</th><th>Mitigation</th></tr>
+<tr><td>Context too large</td><td>LOW</td><td>cap merged signals (~12) in <code>buildCompanyContext</code></td></tr>
+<tr><td>Key/grouping drift</td><td>LOW</td><td>reuse <code>normalizeCompany</code> for the company key</td></tr></table>
+
+<h2>Change History</h2>
+<table><tr><th>Date</th><th>Section</th><th>Change</th><th>Trigger</th></tr><tr><td>2026-06-23</td><td>all</td><td>Initial draft</td><td>BILTIQ-004</td></tr></table>
+</body></html>
