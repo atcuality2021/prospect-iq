@@ -14,6 +14,8 @@ import { buildPlannerPrompt } from './orchestrator2/planner';
 import { buildReplanPrompt } from './orchestrator2/replanner';
 import { buildGraderPrompt } from './orchestrator2/goal-grader';
 import { buildSynthesisPrompt } from './orchestrator2/synthesizer';
+import { emitOrchestrationEvent, onOrchestrationEvent } from './events/emitter';
+import { OrchestrationEvent } from './types';
 
 let passed = 0;
 let failed = 0;
@@ -236,6 +238,25 @@ async function graderSynthTests() {
   assert('synth prompt empty → no research', buildSynthesisPrompt('Z', []).includes('no research'));
 }
 
+// ── orchestration event bus (keyed pub/sub) ───────────────────────────────────
+async function emitterTests() {
+  let received: OrchestrationEvent | null = null;
+  const off = onOrchestrationEvent('oX', (e) => { received = e; });
+  emitOrchestrationEvent('oX', { type: 'orchestration_start', timestamp: new Date() });
+  assert('emitter: handler received event', received !== null && (received as OrchestrationEvent).type === 'orchestration_start');
+  off();
+
+  received = null;
+  emitOrchestrationEvent('oX', { type: 'plan_created', timestamp: new Date() });
+  assert('emitter: unsubscribed handler not called', received === null);
+
+  let other: OrchestrationEvent | null = null;
+  const off2 = onOrchestrationEvent('oY', (e) => { other = e; });
+  emitOrchestrationEvent('oX', { type: 'goal_graded', timestamp: new Date() });
+  assert('emitter: keyed by id (oY not notified for oX)', other === null);
+  off2();
+}
+
 async function main() {
   await gateTests();
   await configTests();
@@ -246,6 +267,7 @@ async function main() {
   await engineReplanTests();
   await plannerTests();
   await graderSynthTests();
+  await emitterTests();
   console.log(`\n${passed}/${passed + failed} passed${failed ? ` — ${failed} FAILED` : ' 🎉'}`);
   process.exit(failed ? 1 : 0);
 }
