@@ -2,12 +2,14 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createOrchestration } from '@/lib/api';
+import ProjectSelector from '@/components/ProjectSelector';
 
 export default function OrchestratePage() {
   const router = useRouter();
   const [goal, setGoal] = useState('');
   const [company, setCompany] = useState('');
   const [url, setUrl] = useState('');
+  const [projectId, setProjectId] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,6 +24,7 @@ export default function OrchestratePage() {
       const { orchestrationId } = await createOrchestration({
         goal: goal.trim(),
         hints: Object.keys(hints).length ? hints : undefined,
+        projectId,
       });
       router.push(`/orchestrate/${orchestrationId}`);
     } catch (e) {
@@ -71,6 +74,8 @@ export default function OrchestratePage() {
             />
           </div>
         </div>
+
+        <ProjectSelector value={projectId} onChange={setProjectId} />
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
