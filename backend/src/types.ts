@@ -86,6 +86,14 @@ export interface Pitch {
   personalizationPoints: string[];
   reflectionNotes?: string;
   revised?: boolean;
+  score?: number;        // final pitch-quality score from Gate 2
+}
+
+// Structurally identical to GateAttempt[] in orchestrator/gate.ts — defined here to
+// avoid a gate.ts → types.ts → gate.ts import cycle.
+export interface GatesRecord {
+  research?: { attempt: number; score: number; pass: boolean; feedback: string; timestamp: Date }[];
+  pitch?:    { attempt: number; score: number; pass: boolean; feedback: string; timestamp: Date }[];
 }
 
 // Paper: adds 'verifying' (evidence chain) and 'reflecting' (reflexive loop)
@@ -131,6 +139,8 @@ export interface Run {
   savedAt?: Date;
   notes?: string;
   chatHistory?: ChatMessage[];
+  gates?: GatesRecord;
+  lowConfidence?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -150,4 +160,6 @@ export interface OrchestratorState {
   pitch?: Pitch;
   events: RunEvent[];
   errors: string[];
+  gates?: GatesRecord;
+  lowConfidence?: boolean;
 }

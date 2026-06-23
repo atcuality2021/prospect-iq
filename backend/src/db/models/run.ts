@@ -7,6 +7,7 @@ const RunEventSchema = new Schema({
   type: String,
   phase: String,
   agent: String,
+  gate: String,
   data: Schema.Types.Mixed,
   error: String,
   timestamp: { type: Date, default: Date.now },
@@ -38,6 +39,14 @@ const ChatMessageSchema = new Schema({
   timestamp: { type: Date, default: Date.now },
 }, { _id: false });
 
+const GateAttemptSchema = new Schema({
+  attempt:   Number,
+  score:     Number,
+  pass:      Boolean,
+  feedback:  String,
+  timestamp: { type: Date, default: Date.now },
+}, { _id: false });
+
 const RunSchema = new Schema({
   runId: { type: String, required: true, unique: true, index: true },
   lead: { type: Schema.Types.Mixed, required: true },
@@ -53,6 +62,11 @@ const RunSchema = new Schema({
   savedAt:     Date,
   notes:       String,
   chatHistory: [ChatMessageSchema],
+  gates: {
+    research: [GateAttemptSchema],
+    pitch:    [GateAttemptSchema],
+  },
+  lowConfidence: { type: Boolean, default: false },
 }, { timestamps: true });
 
 export const RunModel = model<RunDoc>('Run', RunSchema);
