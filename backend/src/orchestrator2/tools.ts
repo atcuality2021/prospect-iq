@@ -13,6 +13,7 @@ export interface ToolResult {
   childRunId?: string;
   summary: string;   // short, LLM-readable
   ok: boolean;
+  score?: number;    // gate score (0-100), for ranking in fan-out aggregation
 }
 
 export type Tool = (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolResult>;
@@ -73,7 +74,7 @@ export const runResearchPipelineTool: Tool = async (args) => {
     `${finalState.pitch?.score != null ? ` (score ${finalState.pitch.score})` : ''}` +
     `${finalState.lowConfidence ? ', LOW CONFIDENCE' : ''}.`;
 
-  return { childRunId, summary, ok: gate.pass && !failed };
+  return { childRunId, summary, ok: gate.pass && !failed, score: gate.score };
 };
 
 // Increment 1: only this tool. Later increments add registry entries here.

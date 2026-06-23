@@ -8,7 +8,8 @@ import { config } from './config';
 import { buildVerificationPrompt } from './orchestrator/nodes/verification';
 import { gradeResearch, evaluatePitchCritique } from './orchestrator/grading';
 import { gradePipelineResult } from './orchestrator2/result-gate';
-import { OrchestrationEngine, EngineDeps } from './orchestrator2/engine';
+import { OrchestrationEngine, EngineDeps, TaskResult } from './orchestrator2/engine';
+import { rankResults } from './orchestrator2/aggregate';
 import { PlanTask } from './types';
 import { buildPlannerPrompt } from './orchestrator2/planner';
 import { buildReplanPrompt } from './orchestrator2/replanner';
@@ -259,6 +260,25 @@ async function emitterTests() {
   off2();
 }
 
+// ── orchestrator2: fan-out aggregation ────────────────────────────────────────
+function mkResult(id: string, ok: boolean, score: number): TaskResult {
+  return {
+    task: { id, tool: 'run_research_pipeline', args: {}, rationale: 'r', status: ok ? 'done' : 'failed' },
+    result: { summary: id, ok, score },
+  };
+}
+async function aggregateTests() {
+  const ranked = rankResults([
+    mkResult('lowOk', true, 40),
+    mkResult('failHigh', false, 95),
+    mkResult('highOk', true, 90),
+  ]);
+  assert('rank: ok+high first', ranked[0].task.id === 'highOk', ranked.map((r) => r.task.id).join(','));
+  assert('rank: ok+low second', ranked[1].task.id === 'lowOk');
+  assert('rank: failed last despite high score', ranked[2].task.id === 'failHigh');
+  assert('rank: empty input safe', rankResults([]).length === 0);
+}
+
 async function main() {
   await gateTests();
   await configTests();
@@ -267,6 +287,7 @@ async function main() {
   await resultGateTests();
   await engineTests();
   await engineReplanTests();
+  await aggregateTests();
   await plannerTests();
   await graderSynthTests();
   await emitterTests();
