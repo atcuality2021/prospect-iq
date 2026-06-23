@@ -85,6 +85,7 @@ export interface Pitch {
   personalizationPoints: string[];
   reflectionNotes?: string;
   revised?: boolean;
+  score?: number;
 }
 
 export type RunStatus = 'queued' | 'researching' | 'verifying' | 'synthesizing' | 'matching' | 'pitching' | 'reflecting' | 'completed' | 'failed';
@@ -93,6 +94,7 @@ export interface RunEvent {
   type: string;
   phase?: string;
   agent?: string;
+  gate?: string;
   data?: unknown;
   error?: string;
   timestamp: string;
@@ -113,6 +115,7 @@ export interface Run {
   pitch?: Pitch;
   events: RunEvent[];
   error?: string;
+  lowConfidence?: boolean;
   saved?: boolean;
   createdAt: string;
   updatedAt: string;

@@ -48,6 +48,8 @@ async function startWorker() {
         profile: finalState.profile,
         matches: finalState.matches,
         pitch: finalState.pitch,
+        gates: finalState.gates,
+        lowConfidence: finalState.lowConfidence ?? false,
         ...(failed && { error: finalState.errors.join('; ') }),
       });
     },

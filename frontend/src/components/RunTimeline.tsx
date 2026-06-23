@@ -12,7 +12,7 @@ const PHASES = [
   { key: 'synthesis',  label: 'Synthesis',          icon: '⚡', desc: 'Think-before-act: reason → structured profile'                 },
   { key: 'matching',   label: 'Service Matching',   icon: '⇄',  desc: 'Ranking your catalog against verified signals'                 },
   { key: 'pitching',   label: 'Pitch Generation',   icon: '✉',  desc: 'Channel-specific outreach tied to real evidence'              },
-  { key: 'reflecting', label: 'Reflection',         icon: '◎',  desc: 'Critic reviews for generic language — revises if quality < 70'},
+  { key: 'reflecting', label: 'Reflection',         icon: '◎',  desc: 'Critic scores the pitch and re-revises until it clears the quality bar'},
 ];
 
 const AGENTS = [
@@ -64,6 +64,10 @@ export default function RunTimeline({ events, status }: Props) {
     return 'active';
   };
 
+  const gateAttempts = (gate: string) =>
+    events.filter((e) => e.type === 'gate_attempt' && e.gate === gate).length;
+  const lowConfidence = events.some((e) => e.type === 'gate_fail' && e.gate === 'research');
+
   const completedCount = PHASES.filter((p) => phaseState(p.key) === 'done').length;
   const progress = Math.round((completedCount / PHASES.length) * 100);
 
@@ -76,6 +80,11 @@ export default function RunTimeline({ events, status }: Props) {
           {totalElapsed() && (
             <span className="text-xs text-gray-400 font-mono bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">
               ⏱ {totalElapsed()} total
+            </span>
+          )}
+          {lowConfidence && (
+            <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+              ⚠ low confidence
             </span>
           )}
           <span className="text-xs font-mono text-gray-400">{completedCount}/{PHASES.length}</span>
@@ -138,6 +147,15 @@ export default function RunTimeline({ events, status }: Props) {
                         )}
                       </span>
                     )}
+                    {(() => {
+                      const gateKey = phase.key === 'verifying' ? 'research' : phase.key === 'reflecting' ? 'pitch' : null;
+                      const attempts = gateKey ? gateAttempts(gateKey) : 0;
+                      return attempts > 1 ? (
+                        <span className="text-[11px] text-violet-600 bg-violet-50 border border-violet-100 px-1.5 py-0.5 rounded-full">
+                          🔁 retried {attempts - 1}×
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
 
                   {(ps === 'pending' || ps === 'active') && (
