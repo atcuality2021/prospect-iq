@@ -2,14 +2,17 @@ import { callWithTool } from '../llm/client';
 import { TaskResult, GoalGrade } from './engine';
 
 export function buildGraderPrompt(goal: string, summaries: string[]): string {
-  return `You are judging whether a sales-research GOAL has been satisfied by the work done.
+  return `You are judging COVERAGE of a sales-research GOAL by the work done.
 
 GOAL: ${goal}
 
-WORK COMPLETED:
+WORK COMPLETED (one line per researched target):
 ${summaries.map((s, i) => `${i + 1}. ${s}`).join('\n') || '(nothing yet)'}
 
-Decide if the goal is fully met. Be strict: if key prospects are unresearched or pitches are missing, it is NOT met.`;
+Judge how many of the goal's target prospects now have a confident pitch. The goal is MET when the
+targets are adequately covered — you do NOT need one perfect output; a solid set of pitches across the
+targets counts as success. It is NOT met only if most targets are still missing, failed, or low-confidence.
+Set "score" to the coverage percentage (confident targets / total targets).`;
 }
 
 export async function gradeGoal(goal: string, results: TaskResult[]): Promise<GoalGrade> {

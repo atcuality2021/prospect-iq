@@ -243,6 +243,8 @@ async function graderSynthTests() {
   assert('grader prompt includes goal', g.includes('Goal X'));
   assert('grader prompt includes work summary', g.includes('summary one'));
   assert('grader prompt empty → nothing yet', buildGraderPrompt('G', []).includes('nothing yet'));
+  assert('grader prompt is coverage-aware', g.toLowerCase().includes('coverage') && g.toLowerCase().includes('targets'));
+  assert('grader prompt drops single-perfect demand', g.includes('do NOT need one perfect output'));
   const s = buildSynthesisPrompt('Goal Y', ['did Y']);
   assert('synth prompt includes goal', s.includes('Goal Y'));
   assert('synth prompt includes summary', s.includes('did Y'));
