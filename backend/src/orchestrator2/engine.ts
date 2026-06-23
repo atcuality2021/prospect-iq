@@ -64,6 +64,10 @@ export class OrchestrationEngine {
       await this.emit({ type: 'goal_graded', data: grade, timestamp: new Date() });
       if (grade.met) { goalMet = true; break; }
 
+      // Don't replan on the final iteration — queued tasks would never run and would
+      // leave dangling 'pending' cards on a capped (partial) run.
+      if (iterations >= maxIterations) break;
+
       // Adapt: ask the replanner for revised remaining work. Completed tasks are
       // preserved; only the pending set is replaced (replanner never touches done).
       const revised = await this.deps.replanner(goal, plan, results);

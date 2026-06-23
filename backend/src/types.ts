@@ -178,6 +178,8 @@ export interface PlanTask {
   resultSummary?: string;        // short text the synthesizer/grader can read
 }
 
+// 'executing' | 'replanning' | 'grading' are reserved for finer-grained status
+// reporting in a later increment; Inc 1 transitions queued → planning → completed|failed.
 export type OrchestrationStatus =
   | 'queued' | 'planning' | 'executing' | 'replanning' | 'grading' | 'completed' | 'failed';
 
