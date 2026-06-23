@@ -11,7 +11,7 @@ import { gradePipelineResult } from './orchestrator2/result-gate';
 import { OrchestrationEngine, EngineDeps, TaskResult } from './orchestrator2/engine';
 import { rankResults } from './orchestrator2/aggregate';
 import { PlanTask } from './types';
-import { buildPlannerPrompt } from './orchestrator2/planner';
+import { buildPlannerPrompt, capTasks } from './orchestrator2/planner';
 import { buildReplanPrompt } from './orchestrator2/replanner';
 import { buildGraderPrompt } from './orchestrator2/goal-grader';
 import { buildSynthesisPrompt } from './orchestrator2/synthesizer';
@@ -227,6 +227,14 @@ async function plannerTests() {
   assert('replan prompt includes goal', rp.includes('Outreach goal'));
   assert('replan prompt includes completed summary', rp.includes('did X'));
   assert('replan prompt empty → nothing yet', buildReplanPrompt('G', []).includes('nothing yet'));
+
+  // fan-out: prompt mentions cap + own-knowledge expansion; capTasks trims excess.
+  const pcap = buildPlannerPrompt('top fintechs', undefined, 10);
+  assert('planner prompt states max targets', pcap.includes('at most 10'));
+  assert('planner prompt forbids web expansion', pcap.toLowerCase().includes('own knowledge') && pcap.toLowerCase().includes('not browse'));
+  const many = Array.from({ length: 15 }, (_v, i) => ({ id: `t${i}`, tool: 'run_research_pipeline' as const, args: {}, rationale: 'r', status: 'pending' as const }));
+  assert('capTasks trims 15 → 10', capTasks(many, 10).length === 10);
+  assert('capTasks never below 1', capTasks(many, 0).length === 1);
 }
 
 // ── orchestrator2: grader / synthesizer prompt builders ───────────────────────

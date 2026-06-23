@@ -18,7 +18,7 @@ const connection = {
 
 // Real LLM/DB-backed dependencies. Unit tests inject mocks instead.
 const deps: EngineDeps = {
-  planner: planGoal,
+  planner: (goal, hints) => planGoal(goal, hints, config.orchMaxTargets),
   replanner: replan,
   grader: gradeGoal,
   synthesizer: synthesize,
