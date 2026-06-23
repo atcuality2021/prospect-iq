@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getProject } from '@/lib/api';
 import { Project, Run } from '@/lib/types';
+import CompanyChatDrawer from '@/components/CompanyChatDrawer';
 
 type Detail = { project: Project; companies: { company: string; runs: Run[] }[] };
 
@@ -12,6 +13,7 @@ export default function ProjectDetailPage() {
   const id = String(params.id);
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [chatCompany, setChatCompany] = useState<string | null>(null);
 
   useEffect(() => {
     getProject(id).then(setData).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
@@ -37,9 +39,15 @@ export default function ProjectDetailPage() {
         </div>
       ) : data.companies.map((c) => (
         <div key={c.company} className="card p-5">
-          <p className="font-semibold text-gray-900 mb-2">
-            {c.company} <span className="text-xs text-gray-400 font-mono">· {c.runs.length} runs</span>
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-semibold text-gray-900">
+              {c.company} <span className="text-xs text-gray-400 font-mono">· {c.runs.length} runs</span>
+            </p>
+            <button onClick={() => setChatCompany(c.company)}
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-700 border border-indigo-100 bg-indigo-50 rounded-lg px-2.5 py-1">
+              💬 Chat
+            </button>
+          </div>
           <div className="space-y-1.5">
             {c.runs.map((r) => (
               <Link key={r.runId} href={`/runs/${r.runId}`}
@@ -51,6 +59,10 @@ export default function ProjectDetailPage() {
           </div>
         </div>
       ))}
+
+      {chatCompany && (
+        <CompanyChatDrawer projectId={id} company={chatCompany} onClose={() => setChatCompany(null)} />
+      )}
     </div>
   );
 }

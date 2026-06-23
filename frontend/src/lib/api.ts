@@ -29,3 +29,5 @@ export const listOrchestrations  = ()                         => req<Orchestrati
 export const createProject       = (body: { name: string; description?: string }) => req<Project>('/projects', { ...json(body) });
 export const listProjects        = ()                         => req<Project[]>('/projects');
 export const getProject          = (id: string)               => req<{ project: Project; companies: { company: string; runs: Run[] }[] }>(`/projects/${id}`);
+export const getCompanyChat      = (pid: string, company: string) => req<{ history: { role: string; content: string }[] }>(`/projects/${pid}/companies/${encodeURIComponent(company)}/chat`);
+export const sendCompanyChat     = (pid: string, company: string, message: string) => req<{ reply: string }>(`/projects/${pid}/companies/${encodeURIComponent(company)}/chat`, { ...json({ message }) });
