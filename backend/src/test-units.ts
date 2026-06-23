@@ -11,6 +11,7 @@ import { gradePipelineResult } from './orchestrator2/result-gate';
 import { OrchestrationEngine, EngineDeps, TaskResult } from './orchestrator2/engine';
 import { rankResults } from './orchestrator2/aggregate';
 import { normalizeCompany, groupRunsByCompany } from './util/groupByCompany';
+import { buildCompanyContext } from './util/companyContext';
 import { PlanTask } from './types';
 import { buildPlannerPrompt, capTasks } from './orchestrator2/planner';
 import { buildReplanPrompt } from './orchestrator2/replanner';
@@ -330,9 +331,26 @@ async function groupTests() {
   assert('group: empty input → []', groupRunsByCompany([]).length === 0);
 }
 
+// ── company chat context ──────────────────────────────────────────────────────
+async function companyContextTests() {
+  const ctx = buildCompanyContext('Stripe', [
+    { profile: { summary: 'sum A', signals: [{ title: 'S1', description: 'd1', relevance: 'high' }] } },
+    { profile: { summary: 'sum B', signals: [{ title: 'S1', description: 'd1', relevance: 'high' }, { title: 'S2', description: 'd2', relevance: 'medium' }] }, pitch: { body: 'pitch body' } },
+  ]);
+  assert('companyContext merges both summaries', ctx.includes('sum A') && ctx.includes('sum B'));
+  assert('companyContext dedupes signals by title', (ctx.match(/S1:/g) ?? []).length === 1);
+  assert('companyContext includes S2', ctx.includes('S2'));
+  assert('companyContext includes latest pitch', ctx.includes('pitch body'));
+  assert('companyContext empty → no research', buildCompanyContext('X', []).includes('no research yet'));
+  const many = Array.from({ length: 20 }, (_v, i) => ({ title: `T${i}`, description: 'd', relevance: 'low' }));
+  const capped = buildCompanyContext('Y', [{ profile: { summary: 's', signals: many } }]);
+  assert('companyContext caps signals at 12', (capped.match(/• \[/g) ?? []).length === 12, `${(capped.match(/• \[/g) ?? []).length}`);
+}
+
 async function main() {
   await gateTests();
   await groupTests();
+  await companyContextTests();
   await configTests();
   await verificationTests();
   await gradingTests();

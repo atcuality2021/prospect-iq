@@ -174,6 +174,16 @@ export interface Project {
   updatedAt: Date;
 }
 
+// ── Company-level chat (BILTIQ-004) ───────────────────────────────────────────
+export interface CompanyChat {
+  projectId: string;
+  companyKey: string;   // normalized lowercase company
+  company: string;      // display company
+  history: ChatMessage[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ── Dynamic orchestrator (BILTIQ-001) ─────────────────────────────────────────
 export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 
