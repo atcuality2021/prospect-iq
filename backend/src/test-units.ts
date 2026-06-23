@@ -7,6 +7,7 @@ import { RunEvent } from './types';
 import { config } from './config';
 import { buildVerificationPrompt } from './orchestrator/nodes/verification';
 import { gradeResearch, evaluatePitchCritique } from './orchestrator/grading';
+import { gradePipelineResult } from './orchestrator2/result-gate';
 
 let passed = 0;
 let failed = 0;
@@ -128,11 +129,21 @@ async function gradingTests() {
   assert('pitch high score but generic language → fail', generic.pass === false);
 }
 
+// ── orchestrator2: result gate ────────────────────────────────────────────────
+async function resultGateTests() {
+  const pitch = { channel: 'email' as const, body: 'b', callToAction: 'c', personalizationPoints: [], score: 80 };
+  assert('result-gate: pitch + confident → pass', gradePipelineResult({ pitch, lowConfidence: false }).pass === true);
+  assert('result-gate: pitch score passes through', gradePipelineResult({ pitch, lowConfidence: false }).score === 80);
+  assert('result-gate: pitch but lowConfidence → fail', gradePipelineResult({ pitch, lowConfidence: true }).pass === false);
+  assert('result-gate: no pitch → fail', gradePipelineResult({ pitch: undefined, lowConfidence: false }).pass === false);
+}
+
 async function main() {
   await gateTests();
   await configTests();
   await verificationTests();
   await gradingTests();
+  await resultGateTests();
   console.log(`\n${passed}/${passed + failed} passed${failed ? ` — ${failed} FAILED` : ' 🎉'}`);
   process.exit(failed ? 1 : 0);
 }
