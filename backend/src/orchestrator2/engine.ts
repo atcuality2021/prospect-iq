@@ -64,7 +64,13 @@ export class OrchestrationEngine {
       await this.emit({ type: 'goal_graded', data: grade, timestamp: new Date() });
       if (grade.met) { goalMet = true; break; }
 
-      // Step 3b wires the replan step in here.
+      // Adapt: ask the replanner for revised remaining work. Completed tasks are
+      // preserved; only the pending set is replaced (replanner never touches done).
+      const revised = await this.deps.replanner(goal, plan, results);
+      const completed = plan.filter((t) => t.status !== 'pending');
+      plan.length = 0;
+      plan.push(...completed, ...revised);
+      await this.emit({ type: 'plan_revised', data: { added: revised.length }, timestamp: new Date() });
     }
 
     const finalAnswer = await this.deps.synthesizer(goal, results);

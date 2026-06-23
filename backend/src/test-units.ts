@@ -178,6 +178,36 @@ async function engineTests() {
   }
 }
 
+async function engineReplanTests() {
+  // replan-applied: grader meets on 2nd pass; replanner injects a new pending task.
+  {
+    let graderCalls = 0;
+    const eng = new OrchestrationEngine(
+      mkDeps({
+        grader: async () => { graderCalls++; return { met: graderCalls >= 2, reasoning: 'r', score: 50 }; },
+        replanner: async () => [mkTask('t2')],
+      }),
+      async () => {},
+    );
+    const out = await eng.run({ orchestrationId: 'o3', goal: 'g', maxIterations: 6 });
+    assert('engine replan: 2 iterations', out.iterations === 2, `got ${out.iterations}`);
+    assert('engine replan: injected task ran (2 tasks done)',
+      out.plan.length === 2 && out.plan.every((t) => t.status === 'done'),
+      out.plan.map((t) => `${t.id}:${t.status}`).join(','));
+    assert('engine replan: t2 present', out.plan.some((t) => t.id === 't2'));
+  }
+  // status-transition: a failing tool marks the task failed, not done.
+  {
+    const eng = new OrchestrationEngine(
+      mkDeps({ tools: { run_research_pipeline: async () => ({ ok: false, summary: 'no pitch' }) } }),
+      async () => {},
+    );
+    const out = await eng.run({ orchestrationId: 'o4', goal: 'g', maxIterations: 1 });
+    assert('engine status: failed task → status=failed', out.plan[0].status === 'failed');
+    assert('engine status: failed task → gatePassed=false', out.plan[0].gatePassed === false);
+  }
+}
+
 async function main() {
   await gateTests();
   await configTests();
@@ -185,6 +215,7 @@ async function main() {
   await gradingTests();
   await resultGateTests();
   await engineTests();
+  await engineReplanTests();
   console.log(`\n${passed}/${passed + failed} passed${failed ? ` — ${failed} FAILED` : ' 🎉'}`);
   process.exit(failed ? 1 : 0);
 }
