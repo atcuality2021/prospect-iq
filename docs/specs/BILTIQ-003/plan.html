@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Plan: BILTIQ-003 Projects MVP</title>
+<style>
+body{font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111827;max-width:860px;margin:0 auto;padding:2rem 1rem;}
+h1{font-size:1.5rem;border-bottom:2px solid #e5e7eb;padding-bottom:1rem;margin-bottom:1.5rem;}
+h2{font-size:1.1rem;border-left:4px solid #e5e7eb;padding-left:.75rem;margin:1.5rem 0 .75rem;}
+code{font-family:ui-monospace,monospace;font-size:.85em;background:#f9fafb;padding:.1em .3em;border-radius:3px;}
+.step{border:1px solid #bbf7d0;background:#f0fdf4;border-radius:6px;padding:.85rem 1.1rem;margin-bottom:.9rem;}
+.t{font-weight:700;} .b{font-size:.7rem;font-weight:700;background:#e0f2fe;color:#0369a1;border-radius:9999px;padding:.1rem .5rem;float:right;}
+.m{font-size:.82rem;color:#374151;margin:.3rem 0;} table{width:100%;border-collapse:collapse;font-size:.85rem;} th,td{border:1px solid #e5e7eb;padding:.4rem .6rem;text-align:left;} th{background:#f9fafb;}
+.rm{color:#d97706;font-weight:700;} .rl{color:#16a34a;font-weight:700;}
+</style></head><body>
+<h1>Plan: BILTIQ-003 — Projects MVP</h1>
+<p class="m"><b>Branch</b> feat/loop-engineering · each step = one commit · TDD via <code>npm run test:units</code> · commit <code>BILTIQ-003: &lt;step&gt;</code>.</p>
+
+<div class="step"><span class="b">M</span><span class="t">Step 1 — Data layer: Project model + projectId fields + types</span>
+<p class="m"><b>Files:</b> create <code>backend/src/db/models/project.ts</code>; modify <code>backend/src/types.ts</code> (<code>Project</code>; <code>projectId?</code> on <code>Run</code> + <code>OrchestrationRun</code>), <code>backend/src/db/models/run.ts</code> + <code>orchestrationRun.ts</code> (<code>projectId: String</code>).</p>
+<p class="m"><b>Gate:</b> <code>npm run typecheck</code>. (AC1, AC2, AC7)</p></div>
+
+<div class="step"><span class="b">M</span><span class="t">Step 2 — groupByCompany util + tests</span>
+<p class="m"><b>Files:</b> create <code>backend/src/util/groupByCompany.ts</code> (<code>normalizeCompany</code>, <code>groupRunsByCompany(runs) → {company,runs}[]</code>, blanks → "Unassigned"); <code>backend/src/test-units.ts</code>.</p>
+<p class="m"><b>Tests:</b> "Stripe" and " stripe " group together; blank company → "Unassigned"; empty input → []. <b>Gate:</b> <code>npm run test:units</code>. (AC3, AC8)</p></div>
+
+<div class="step"><span class="b">M</span><span class="t">Step 3 — Projects routes</span>
+<p class="m"><b>Files:</b> create <code>backend/src/routes/projects.ts</code> (<code>POST /</code> create, <code>GET /</code> list, <code>GET /:id</code> → project + <code>groupRunsByCompany</code> of its runs); register in <code>backend/src/server.ts</code>.</p>
+<p class="m"><b>Tests:</b> manual curl create/list/get. <b>Gate:</b> <code>typecheck</code>. (AC1, AC3)</p></div>
+
+<div class="step"><span class="b">L</span><span class="t">Step 4 — Tag runs + orchestrations with projectId</span>
+<p class="m"><b>Files:</b> <code>routes/leads.ts</code> (accept <code>projectId</code>), <code>routes/runs.ts</code> (<code>?projectId=</code> filter + rerun carries it), <code>routes/orchestrations.ts</code> (persist <code>projectId</code>), <code>orchestrator2/tools.ts</code> (<code>ToolContext.projectId?</code> → set on child run), <code>orchestrator2/engine.ts</code> (thread from <code>EngineInput</code>), <code>queue/orchestrationWorker.ts</code> (pass <code>doc.projectId</code>).</p>
+<p class="m"><b>Tests:</b> <code>typecheck</code>; existing engine unit tests still green (projectId optional, undefined preserves behavior). <b>Gate:</b> <code>npm run test:units &amp;&amp; npm run typecheck</code>. (AC2)</p></div>
+
+<div class="step"><span class="b">M</span><span class="t">Step 5 — Frontend data layer + sidebar + selector</span>
+<p class="m"><b>Files:</b> <code>frontend/src/lib/types.ts</code> (<code>Project</code>; <code>projectId?</code> on <code>Run</code>), <code>frontend/src/lib/api.ts</code> (<code>createProject/listProjects/getProject</code>; projectId in bodies), <code>frontend/src/components/Sidebar.tsx</code> ("Projects" entry), create <code>frontend/src/components/ProjectSelector.tsx</code>.</p>
+<p class="m"><b>Gate:</b> <code>cd frontend &amp;&amp; npx tsc --noEmit</code>. (AC4, AC5)</p></div>
+
+<div class="step"><span class="b">L</span><span class="t">Step 6 — Projects list + detail pages</span>
+<p class="m"><b>Files:</b> create <code>frontend/src/app/projects/page.tsx</code> (list + create), <code>frontend/src/app/projects/[id]/page.tsx</code> (companies → expandable runs, links to <code>/runs/[id]</code>, "Unassigned" group).</p>
+<p class="m"><b>Tests:</b> frontend typecheck; manual click-through. <b>Gate:</b> <code>npx tsc --noEmit</code>. (AC4, AC7)</p></div>
+
+<div class="step"><span class="b">M</span><span class="t">Step 7 — Selector in forms + "Research again"</span>
+<p class="m"><b>Files:</b> <code>frontend/src/components/LeadForm.tsx</code> (embed <code>ProjectSelector</code>, pass projectId), <code>frontend/src/app/orchestrate/page.tsx</code> (embed selector), surface "Research again" (rerun pre-fill) on the run detail/card.</p>
+<p class="m"><b>Gate:</b> <code>npx tsc --noEmit</code>. (AC5, AC6)</p></div>
+
+<div class="step"><span class="b">M</span><span class="t">Step 8 — ADR + CHANGELOG + verification</span>
+<p class="m"><b>Files:</b> create <code>docs/adr/0005-projects-derived-company-grouping.md</code>; <code>CHANGELOG.md</code>. Run full suite + both typechecks; manual: create a project, file a run under it, see it grouped by company.</p>
+<p class="m"><b>Gate:</b> green suite. (AC8 + manual AC1–AC7)</p></div>
+
+<h2>Test Strategy</h2>
+<table><tr><th>Layer</th><th>What</th></tr>
+<tr><td>Unit (LLM-free)</td><td><code>normalizeCompany</code> + <code>groupRunsByCompany</code>; existing engine tests stay green with optional projectId</td></tr>
+<tr><td>Manual</td><td>create project → file New Research + Orchestrate under it → project detail groups by company → "Research again"</td></tr></table>
+
+<h2>Rollback</h2>
+<p>Additive. Remove the new model/routes/util/pages/selector; revert the optional <code>projectId</code> field
+additions. Drop the <code>projects</code> collection. No migration of existing runs; nothing destructive.</p>
+
+<h2>Risks</h2>
+<table><tr><th>Risk</th><th>Sev</th><th>Mitigation</th></tr>
+<tr><td>Company-name variants don't group</td><td class="rl">LOW</td><td><code>normalizeCompany</code> trim+lowercase; accept imperfect v1, dedup is deferred.</td></tr>
+<tr><td>projectId threading regresses orchestrator</td><td class="rm">MED</td><td>Optional field, defaults undefined; existing 71-test engine suite must stay green at Step 4.</td></tr></table>
+
+<h2>Change History</h2>
+<table><tr><th>Date</th><th>Section</th><th>Change</th><th>Trigger</th></tr>
+<tr><td>2026-06-23</td><td>all</td><td>Initial draft from confirmed design</td><td>BILTIQ-003</td></tr></table>
+</body></html>
