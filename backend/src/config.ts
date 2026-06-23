@@ -23,4 +23,11 @@ export const config = {
   serpapiKey: process.env.SERPAPI_KEY || '',
   youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+
+  gates: {
+    minVerifiedFacts:      parseInt(process.env.GATE_MIN_VERIFIED_FACTS || '2', 10),
+    researchRevisions:     parseInt(process.env.GATE_RESEARCH_REVISIONS || '1', 10),
+    pitchRevisions:        parseInt(process.env.GATE_PITCH_REVISIONS    || '2', 10),
+    pitchQualityThreshold: parseInt(process.env.GATE_PITCH_QUALITY      || '70', 10),
+  },
 };

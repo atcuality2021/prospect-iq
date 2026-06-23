@@ -4,6 +4,7 @@
  */
 import { runGate } from './orchestrator/gate';
 import { RunEvent } from './types';
+import { config } from './config';
 
 let passed = 0;
 let failed = 0;
@@ -86,8 +87,17 @@ async function gateTests() {
   }
 }
 
+// ── config ──────────────────────────────────────────────────────────────────
+async function configTests() {
+  assert('config.gates.minVerifiedFacts default 2', config.gates.minVerifiedFacts === 2, `got ${config.gates.minVerifiedFacts}`);
+  assert('config.gates.researchRevisions default 1', config.gates.researchRevisions === 1, `got ${config.gates.researchRevisions}`);
+  assert('config.gates.pitchRevisions default 2', config.gates.pitchRevisions === 2, `got ${config.gates.pitchRevisions}`);
+  assert('config.gates.pitchQualityThreshold default 70', config.gates.pitchQualityThreshold === 70, `got ${config.gates.pitchQualityThreshold}`);
+}
+
 async function main() {
   await gateTests();
+  await configTests();
   console.log(`\n${passed}/${passed + failed} passed${failed ? ` — ${failed} FAILED` : ' 🎉'}`);
   process.exit(failed ? 1 : 0);
 }
