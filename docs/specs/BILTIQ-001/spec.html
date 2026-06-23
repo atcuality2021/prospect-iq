@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spec: Dynamic Orchestrator — Increment 1 (Orchestrator Core)</title>
+  <style>
+    :root {
+      --color-shipped:#16a34a; --color-wip:#d97706; --color-blocker:#dc2626;
+      --color-ac-open:#d97706; --color-ac-done:#16a34a;
+      --color-border:#e5e7eb; --color-bg:#ffffff; --color-bg-subtle:#f9fafb;
+      --color-text:#111827; --color-muted:#6b7280; --radius:6px; --max-width:860px;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.6;color:var(--color-text);background:var(--color-bg);padding:2rem 1rem;}
+    main{max-width:var(--max-width);margin:0 auto;}
+    header{border-bottom:2px solid var(--color-border);padding-bottom:1.25rem;margin-bottom:2rem;}
+    header h1{font-size:1.5rem;margin-bottom:0.75rem;}
+    .meta{display:flex;flex-wrap:wrap;gap:0.5rem 1.5rem;}
+    .meta dt{font-weight:600;color:var(--color-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;}
+    .meta dd{font-size:0.9rem;}
+    section{margin-bottom:2rem;}
+    h2{font-size:1.1rem;font-weight:700;border-left:4px solid var(--color-border);padding-left:0.75rem;margin-bottom:0.75rem;}
+    p,li{color:var(--color-text);margin-bottom:0.4rem;}
+    ul{padding-left:1.4rem;}
+    .ac-list{list-style:none;padding:0;display:flex;flex-direction:column;gap:0.4rem;}
+    .ac-item{display:flex;align-items:flex-start;gap:0.6rem;padding:0.5rem 0.75rem;border-radius:var(--radius);background:var(--color-bg-subtle);border:1px solid var(--color-border);}
+    .ac-badge{font-size:0.7rem;font-weight:700;padding:0.15rem 0.45rem;border-radius:9999px;white-space:nowrap;flex-shrink:0;}
+    .ac-open{background:#fef3c7;color:var(--color-ac-open);border:1px solid #fcd34d;}
+    .ac-done{background:#dcfce7;color:var(--color-ac-done);border:1px solid #86efac;}
+    .ac-label{font-size:0.85rem;}
+    table{width:100%;border-collapse:collapse;font-size:0.85rem;}
+    th,td{text-align:left;padding:0.5rem 0.75rem;border:1px solid var(--color-border);}
+    th{background:var(--color-bg-subtle);font-weight:600;}
+    @media (max-width:600px){.meta{flex-direction:column;}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Spec: Dynamic Orchestrator — Increment 1 (Orchestrator Core)</h1>
+    <dl class="meta">
+      <div><dt>Task ID</dt><dd>BILTIQ-001</dd></div>
+      <div><dt>Owner</dt><dd>@harish</dd></div>
+      <div><dt>Created</dt><dd>2026-06-23</dd></div>
+      <div><dt>Wall-clock</dt><dd>XL</dd></div>
+      <div><dt>Tokens</dt><dd>L</dd></div>
+      <div><dt>Iteration cycles</dt><dd>TBD</dd></div>
+      <div><dt>Human review (min)</dt><dd>30</dd></div>
+      <div><dt>Harness</dt><dd>Claude Code Opus 4.8 (1M)</dd></div>
+      <div><dt>Compliance</dt><dd>on_prem_preferred</dd></div>
+      <div><dt>Depends on</dt><dd>Phase A — L2 gates (runGate)</dd></div>
+    </dl>
+  </header>
+
+  <section id="problem">
+    <h2>Problem</h2>
+    <p>ProspectIQ runs a fixed 6-phase pipeline hardcoded in <code>backend/src/orchestrator/index.ts</code>.
+    The user supplies a structured lead and always gets the same sequence — there is no planning step, so
+    the system cannot satisfy goals that need a different or adaptive set of actions. We want a dynamic
+    orchestrator: the user states a free-form goal, an LLM planner decides what to do, runs it through
+    sub-agents, quality-checks each result, adapts the remaining plan from what it learns, and loops until
+    the goal is met. The existing pipeline becomes one tool the planner can call.</p>
+    <p>Increment 1 builds the full agentic loop (plan → execute → gate → replan → grade → synthesize) with a
+    <strong>single tool</strong> — <code>run_research_pipeline</code> — to de-risk the control flow, data
+    model, and UI before widening the tool palette in later increments.</p>
+  </section>
+
+  <section id="user-impact">
+    <h2>User Impact</h2>
+    <p>A new <code>/orchestrate</code> page lets a user type a sales goal (e.g. "Research Stripe and draft an
+    outreach email") instead of filling a structured lead form. They watch a live "plan board" as the
+    orchestrator plans, runs gated pipeline tasks, replans, and produces a synthesized final answer. The
+    existing structured <code>/new</code> flow is unchanged and remains available.</p>
+  </section>
+
+  <section id="acceptance-criteria">
+    <h2>Acceptance Criteria</h2>
+    <ul class="ac-list">
+      <li class="ac-item"><span class="ac-badge ac-open">OPEN</span><span class="ac-label"><strong>AC1</strong> — <code>POST /api/orchestrations {goal, hints?}</code> creates an <code>OrchestrationRun</code> (status <code>queued</code>), enqueues a BullMQ job on a new <code>orchestration</code> queue, and the <code>/orchestrate</code> page receives live <code>OrchestrationEvent</code>s over SSE.</span></li>
+      <li class="ac-item"><span class="ac-badge ac-open">OPEN</span><span class="ac-label"><strong>AC2</strong> — The engine produces an initial plan, executes each task as a gated child <code>Run</code>, runs a replan step between tasks, and terminates when the goal grader returns <code>met:true</code> OR <code>iterations</code> reaches <code>maxIterations</code> (default 6).</span></li>
+      <li class="ac-item"><span class="ac-badge ac-open">OPEN</span><span class="ac-label"><strong>AC3</strong> — A run capped before completion ends with <code>goalMet:false</code>, <code>partial:true</code>, a non-empty best-effort <code>finalAnswer</code>, and a "goal partially met" badge on the UI.</span></li>
+      <li class="ac-item"><span class="ac-badge ac-open">OPEN</span><span class="ac-label"><strong>AC4</strong> — The engine accepts its planner/replanner/grader/tools as injected dependencies and passes LLM-free unit tests for: stop-on-met, stop-on-cap (sets <code>partial</code>), replan output applied to the pending-task list, and correct task status transitions.</span></li>
+      <li class="ac-item"><span class="ac-badge ac-open">OPEN</span><span class="ac-label"><strong>AC5</strong> — A child <code>Run</code> produced by a task is persisted and linked via <code>PlanTask.childRunId</code>, and is reachable from the plan board (link to <code>/runs/[id]</code>).</span></li>
+      <li class="ac-item"><span class="ac-badge ac-open">OPEN</span><span class="ac-label"><strong>AC6</strong> — Each task result is gated via the Phase A <code>runGate</code> primitive (pass = child Run has a pitch and is not <code>lowConfidence</code>); a failed gate is visible in the events and influences the replan.</span></li>
+      <li class="ac-item"><span class="ac-badge ac-open">OPEN</span><span class="ac-label"><strong>AC7</strong> — Adding a tool in a later increment requires only a new <code>TOOLS</code> registry entry plus a planner-schema enum value — no <code>engine.ts</code> changes (verified by code structure / review).</span></li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h2>Out of Scope</h2>
+    <ul>
+      <li><code>fan_out</code> parallel sub-agents over entity lists (Increment 2).</li>
+      <li>Granular per-phase tools — scrape/verify/synthesize/match/pitch/reflect as individual tools (Increment 3).</li>
+      <li><code>web_search</code> discovery tool (Increment 4).</li>
+      <li>Parallel task execution (Increment 1 runs tasks sequentially; engine is structured to allow parallelism later).</li>
+      <li>Human-in-the-loop plan editing / approval before execution; auth; multi-user.</li>
+    </ul>
+  </section>
+
+  <section id="open-questions">
+    <h2>Open Questions</h2>
+    <ul>
+      <li>Resolved: planner style = hybrid plan + adapt; tool = <code>run_research_pipeline</code> only; provider per <code>on_prem_preferred</code>.</li>
+      <li>Pending design call (for biltiq-code-architect): does the orchestration use a new BullMQ queue or extend the existing <code>prospect-research</code> queue with a job type? (Spec assumes a new <code>orchestration</code> queue.)</li>
+      <li>Pending: SSE vs. polling for the plan board (spec leans SSE, reusing <code>events/emitter.ts</code> keyed <code>orchestration:&lt;id&gt;</code>).</li>
+    </ul>
+  </section>
+
+  <section id="change-history">
+    <h2>Change History</h2>
+    <table>
+      <thead><tr><th>Date</th><th>Section</th><th>What Changed</th><th>Trigger</th></tr></thead>
+      <tbody>
+        <tr><td>2026-06-23</td><td>all</td><td>Initial draft — ported from approved markdown design (docs/superpowers/specs/2026-06-23-dynamic-orchestrator-increment-1-design.md)</td><td>BILTIQ-001</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>
