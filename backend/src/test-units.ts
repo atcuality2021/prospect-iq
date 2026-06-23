@@ -279,6 +279,29 @@ async function aggregateTests() {
   assert('rank: empty input safe', rankResults([]).length === 0);
 }
 
+// ── orchestrator2: fan-out bounded parallelism ────────────────────────────────
+async function engineFanoutTests() {
+  let inFlight = 0;
+  let peak = 0;
+  const tool = async () => {
+    inFlight++; peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, 5));
+    inFlight--;
+    return { ok: true, summary: 's', score: 50 };
+  };
+  let synthInput: TaskResult[] = [];
+  const deps = mkDeps({
+    planner: async () => [mkTask('a'), mkTask('b'), mkTask('c'), mkTask('d'), mkTask('e')],
+    tools: { run_research_pipeline: tool },
+    synthesizer: async (_g, results) => { synthInput = results; return 'final'; },
+  });
+  const eng = new OrchestrationEngine(deps, async () => {}, { concurrency: 2 });
+  const out = await eng.run({ orchestrationId: 'of', goal: 'g', maxIterations: 1 });
+  assert('fanout: all 5 tasks ran', out.plan.length === 5 && out.plan.every((t) => t.status === 'done'));
+  assert('fanout: peak in-flight bounded by concurrency=2', peak === 2, `peak=${peak}`);
+  assert('fanout: synthesizer received ranked results (5)', synthInput.length === 5);
+}
+
 async function main() {
   await gateTests();
   await configTests();
@@ -288,6 +311,7 @@ async function main() {
   await engineTests();
   await engineReplanTests();
   await aggregateTests();
+  await engineFanoutTests();
   await plannerTests();
   await graderSynthTests();
   await emitterTests();

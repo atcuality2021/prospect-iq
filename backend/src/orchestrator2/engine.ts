@@ -1,5 +1,20 @@
 import { OrchestrationEvent, PlanTask } from '../types';
 import { Tool, ToolResult } from './tools';
+import { config } from '../config';
+import { rankResults } from './aggregate';
+
+// Run `fn` over items with at most `concurrency` in flight at once.
+export async function runPool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (next < items.length) {
+      const idx = next++;
+      await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
+}
 
 export interface TaskResult {
   task: PlanTask;
@@ -37,10 +52,15 @@ export interface EngineResult {
 }
 
 export class OrchestrationEngine {
+  private concurrency: number;
+
   constructor(
     private deps: EngineDeps,
     private emit: (e: OrchestrationEvent) => Promise<void>,
-  ) {}
+    opts: { concurrency?: number } = {},
+  ) {
+    this.concurrency = opts.concurrency ?? config.orchFanoutConcurrency;
+  }
 
   async run(input: EngineInput): Promise<EngineResult> {
     const { orchestrationId, goal, hints, maxIterations } = input;
@@ -56,9 +76,8 @@ export class OrchestrationEngine {
     while (iterations < maxIterations) {
       iterations++;
 
-      for (const task of plan.filter((t) => t.status === 'pending')) {
-        await this.executeTask(task, results, orchestrationId);
-      }
+      const pending = plan.filter((t) => t.status === 'pending');
+      await runPool(pending, this.concurrency, (task) => this.executeTask(task, results, orchestrationId));
 
       const grade = await this.deps.grader(goal, results);
       await this.emit({ type: 'goal_graded', data: grade, timestamp: new Date() });
@@ -77,7 +96,7 @@ export class OrchestrationEngine {
       await this.emit({ type: 'plan_revised', data: { added: revised.length }, timestamp: new Date() });
     }
 
-    const finalAnswer = await this.deps.synthesizer(goal, results);
+    const finalAnswer = await this.deps.synthesizer(goal, rankResults(results));
     const partial = !goalMet;
     await this.emit({ type: 'orchestration_complete', data: { goalMet, partial, iterations }, timestamp: new Date() });
 
