@@ -12,6 +12,8 @@ import { OrchestrationEngine, EngineDeps } from './orchestrator2/engine';
 import { PlanTask } from './types';
 import { buildPlannerPrompt } from './orchestrator2/planner';
 import { buildReplanPrompt } from './orchestrator2/replanner';
+import { buildGraderPrompt } from './orchestrator2/goal-grader';
+import { buildSynthesisPrompt } from './orchestrator2/synthesizer';
 
 let passed = 0;
 let failed = 0;
@@ -222,6 +224,18 @@ async function plannerTests() {
   assert('replan prompt empty → nothing yet', buildReplanPrompt('G', []).includes('nothing yet'));
 }
 
+// ── orchestrator2: grader / synthesizer prompt builders ───────────────────────
+async function graderSynthTests() {
+  const g = buildGraderPrompt('Goal X', ['summary one']);
+  assert('grader prompt includes goal', g.includes('Goal X'));
+  assert('grader prompt includes work summary', g.includes('summary one'));
+  assert('grader prompt empty → nothing yet', buildGraderPrompt('G', []).includes('nothing yet'));
+  const s = buildSynthesisPrompt('Goal Y', ['did Y']);
+  assert('synth prompt includes goal', s.includes('Goal Y'));
+  assert('synth prompt includes summary', s.includes('did Y'));
+  assert('synth prompt empty → no research', buildSynthesisPrompt('Z', []).includes('no research'));
+}
+
 async function main() {
   await gateTests();
   await configTests();
@@ -231,6 +245,7 @@ async function main() {
   await engineTests();
   await engineReplanTests();
   await plannerTests();
+  await graderSynthTests();
   console.log(`\n${passed}/${passed + failed} passed${failed ? ` — ${failed} FAILED` : ' 🎉'}`);
   process.exit(failed ? 1 : 0);
 }
